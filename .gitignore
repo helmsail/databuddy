@@ -31,3 +31,6 @@ build/
 
 ### VS Code ###
 .vscode/
+
+### 本地文档(不提交) ###
+/docs/dataagent-diff.md
