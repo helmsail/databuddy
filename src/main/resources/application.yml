@@ -5,6 +5,14 @@ spring:
 databuddy:
   storage:
     local-root-path: ./data/files
+  python:
+    image: databuddy-python:3.12 # 沙箱镜像,先构建 docker/python/Dockerfile
+    min-idle: 1 # 常驻容器数(启动后异步预热)
+    max-total: 3 # 容器总数上限
+    idle-ttl: 10m # 空闲收缩:超过该时长且多余常驻的容器销毁
+    borrow-timeout: 30s # 借容器等待上限,超时视为容量耗尽
+    exec-timeout: 60s # 单次执行超时,超时容器直接销毁
+    work-root: ./data/sandbox # 工作目录根(宿主侧,挂载进容器 /work)
 
 management:
   tracing:
