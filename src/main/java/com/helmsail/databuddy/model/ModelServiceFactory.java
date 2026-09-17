@@ -1,6 +1,11 @@
 package com.helmsail.databuddy.model;
 
+import io.micrometer.observation.ObservationRegistry;
+
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.client.DefaultChatClientBuilder;
+import org.springframework.ai.chat.client.advisor.observation.DefaultAdvisorObservationConvention;
+import org.springframework.ai.chat.client.observation.DefaultChatClientObservationConvention;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.document.MetadataMode;
 import org.springframework.ai.embedding.EmbeddingModel;
@@ -22,15 +27,22 @@ import lombok.extern.slf4j.Slf4j;
  * 模型服务工厂:同时生效的 CHAT 与 EMBEDDING 各一个实例。
  * 外部传入配置后先构建新实例、成功再替换(坏配置不影响现役实例,旧实例随引用丢弃由 GC 回收);
  * 阻塞调用与流式调用均由 Spring AI 封装,本工厂不做二次加工。
- * 临时性小用途不经过本工厂,直接使用 Spring AI 构建临时实例
+ * 临时性小用途不经过本工厂,直接使用 Spring AI 构建临时实例。
+ * 构建的模型挂接 ObservationRegistry,LLM 调用自动接入观测(span 与 token 指标)
  */
 @Slf4j
 @Component
 public class ModelServiceFactory {
 
+	private final ObservationRegistry observationRegistry;
+
 	private volatile ChatClient chatClient;
 
 	private volatile EmbeddingModel embeddingModel;
+
+	public ModelServiceFactory(ObservationRegistry observationRegistry) {
+		this.observationRegistry = observationRegistry;
+	}
 
 	/** 获取当前生效的 CHAT 客户端;未配置时抛业务异常 */
 	public ChatClient getChatClient() {
@@ -88,8 +100,11 @@ public class ModelServiceFactory {
 		ChatModel chatModel = OpenAiChatModel.builder()
 			.openAiApi(buildApi(config))
 			.defaultOptions(options.build())
+			.observationRegistry(observationRegistry) // 模型调用自动生成 span 与 token 指标
 			.build();
-		ChatClient client = ChatClient.builder(chatModel).build();
+		// ChatClient 层同样挂 registry:框架层 span 覆盖提示词组装与 Advisor 链
+		ChatClient client = new DefaultChatClientBuilder(chatModel, observationRegistry,
+				new DefaultChatClientObservationConvention(), new DefaultAdvisorObservationConvention()).build();
 		log.info("CHAT 模型已切换: {} ({})", config.getModelName(), config.getBaseUrl());
 		return client;
 	}
@@ -97,7 +112,7 @@ public class ModelServiceFactory {
 	private EmbeddingModel buildEmbeddingModel(ModelConfig config) {
 		EmbeddingModel model = new OpenAiEmbeddingModel(buildApi(config), MetadataMode.EMBED,
 				OpenAiEmbeddingOptions.builder().model(config.getModelName()).build(),
-				RetryUtils.DEFAULT_RETRY_TEMPLATE);
+				RetryUtils.DEFAULT_RETRY_TEMPLATE, observationRegistry); // 5 参构造:挂上观测
 		log.info("EMBEDDING 模型已切换: {} ({})", config.getModelName(), config.getBaseUrl());
 		return model;
 	}

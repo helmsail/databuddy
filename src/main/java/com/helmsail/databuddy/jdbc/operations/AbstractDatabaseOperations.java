@@ -4,6 +4,8 @@ import java.sql.Connection;
 import java.sql.SQLException;
 import java.util.List;
 
+import io.micrometer.observation.annotation.Observed;
+
 import com.helmsail.databuddy.exception.BusinessException;
 import com.helmsail.databuddy.exception.ErrorCode;
 import com.helmsail.databuddy.jdbc.config.DbConfig;
@@ -43,6 +45,9 @@ public abstract class AbstractDatabaseOperations implements DatabaseOperations {
 	}
 
 	@Override
+	// 一行注解 = 一个 span(名字 + 标签);切面自动计时,并记录成功/失败
+	@Observed(name = "db.listTables", contextualName = "查看表清单",
+			lowCardinalityKeyValues = { "db.type", "mysql" })
 	public List<TableInfo> listTables(DbConfig config) {
 		SqlDialect dialect = dialectFactory.get(type);
 		try (Connection connection = poolFactory.get(config).getConnection()) {
@@ -54,6 +59,8 @@ public abstract class AbstractDatabaseOperations implements DatabaseOperations {
 	}
 
 	@Override
+	@Observed(name = "db.listColumns", contextualName = "查看表结构",
+			lowCardinalityKeyValues = { "db.type", "mysql" })
 	public List<ColumnInfo> listColumns(DbConfig config, String table) {
 		SqlDialect dialect = dialectFactory.get(type);
 		try (Connection connection = poolFactory.get(config).getConnection()) {
@@ -65,6 +72,8 @@ public abstract class AbstractDatabaseOperations implements DatabaseOperations {
 	}
 
 	@Override
+	@Observed(name = "db.previewTable", contextualName = "预览表数据",
+			lowCardinalityKeyValues = { "db.type", "mysql" })
 	public TableData previewTable(DbConfig config, String table, int limit) {
 		SqlDialect dialect = dialectFactory.get(type);
 		int safeLimit = limit > 0 ? limit : DEFAULT_PREVIEW_LIMIT;

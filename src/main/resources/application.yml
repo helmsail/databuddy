@@ -5,3 +5,22 @@ spring:
 databuddy:
   storage:
     local-root-path: ./data/files
+
+management:
+  tracing:
+    sampling:
+      probability: 1.0 # 本地全采样(Boot 默认 0.1,调试期会随机丢)
+  endpoints:
+    web:
+      exposure:
+        include: health,metrics
+  # —— 接入 Langfuse 时,删除下面几行行首的 # 即可 ——
+  # otlp:
+  #   tracing:
+  #     endpoint: http://localhost:3000/api/public/otel/v1/traces
+  #     headers:
+  #       Authorization: "Basic <base64(publicKey:secretKey)>"
+
+logging:
+  pattern:
+    level: "%5p [${spring.application.name:},%X{traceId:-},%X{spanId:-}]"
