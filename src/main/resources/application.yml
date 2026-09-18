@@ -6,10 +6,10 @@ spring:
     username: root
     password: root
   sql:
-    init: # 启动执行提示词建表脚本(幂等:IF NOT EXISTS)
+    init: # 启动执行系统库初始化脚本(幂等:IF NOT EXISTS)
       mode: always
       encoding: UTF-8
-      schema-locations: classpath:db/node_prompt_template.sql
+      schema-locations: classpath:db/schema.sql
 
 databuddy:
   storage:
