@@ -44,6 +44,18 @@
 			<artifactId>druid</artifactId>
 			<version>1.2.22</version>
 		</dependency>
+		<!-- 系统库访问:MyBatis(提示词表等系统元数据;被分析的业务库走自带 jdbc 包/Druid) -->
+		<dependency>
+			<groupId>org.mybatis.spring.boot</groupId>
+			<artifactId>mybatis-spring-boot-starter</artifactId>
+			<version>3.0.5</version>
+		</dependency>
+		<!-- MySQL 驱动(系统库) -->
+		<dependency>
+			<groupId>com.mysql</groupId>
+			<artifactId>mysql-connector-j</artifactId>
+			<scope>runtime</scope>
+		</dependency>
 		<dependency>
 			<groupId>org.springframework.ai</groupId>
 			<artifactId>spring-ai-openai</artifactId>
@@ -51,6 +63,13 @@
 		<dependency>
 			<groupId>org.springframework.ai</groupId>
 			<artifactId>spring-ai-client-chat</artifactId>
+		</dependency>
+
+		<!-- Spring AI Alibaba Graph:状态图工作流引擎(依赖 Spring AI 1.1.0,与本项目 1.1.2 兼容) -->
+		<dependency>
+			<groupId>com.alibaba.cloud.ai</groupId>
+			<artifactId>spring-ai-alibaba-graph-core</artifactId>
+			<version>1.1.0.0</version>
 		</dependency>
 
 		<!-- 可观测性 -->
@@ -73,6 +92,12 @@
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-test</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<!-- 测试用内存库(经 H2 的 MySQL 兼容模式验证提示词表逻辑) -->
+		<dependency>
+			<groupId>com.h2database</groupId>
+			<artifactId>h2</artifactId>
 			<scope>test</scope>
 		</dependency>
 	</dependencies>

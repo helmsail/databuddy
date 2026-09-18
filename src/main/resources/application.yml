@@ -1,6 +1,15 @@
 spring:
   application:
     name: databuddy
+  datasource: # 系统库(应用自有:提示词、图检查点等元数据;被分析的业务库走 databuddy jdbc 包)
+    url: jdbc:mysql://localhost:3306/databuddy?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+    username: root
+    password: root
+  sql:
+    init: # 启动执行提示词建表脚本(幂等:IF NOT EXISTS)
+      mode: always
+      encoding: UTF-8
+      schema-locations: classpath:db/node_prompt_template.sql
 
 databuddy:
   storage:
@@ -22,7 +31,7 @@ management:
     web:
       exposure:
         include: health,metrics
-  # —— 接入 Langfuse 时,删除下面几行行首的 # 即可 ——
+  # —— 接入 Langfuse 时,取消下面注释即可 ——
   # otlp:
   #   tracing:
   #     endpoint: http://localhost:3000/api/public/otel/v1/traces
