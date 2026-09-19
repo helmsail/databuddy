@@ -1,6 +1,6 @@
-package com.helmsail.databuddy.jdbc.dialect;
+package com.helmsail.databuddy.bizdatabase.jdbc.dialect;
 
-import com.helmsail.databuddy.jdbc.config.DbType;
+import com.helmsail.databuddy.bizdatabase.jdbc.config.DbType;
 
 /**
  * SQL 方言:封装"因数据库而异"的查询语句生成,实现类只写差异部分

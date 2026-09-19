@@ -1,4 +1,4 @@
-package com.helmsail.databuddy.jdbc.model;
+package com.helmsail.databuddy.bizdatabase.jdbc.model;
 
 import java.util.List;
 

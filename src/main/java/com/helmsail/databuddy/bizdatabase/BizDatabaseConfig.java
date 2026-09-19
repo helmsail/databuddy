@@ -4,7 +4,7 @@ import java.time.LocalDateTime;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 
-import com.helmsail.databuddy.jdbc.config.DbType;
+import com.helmsail.databuddy.bizdatabase.jdbc.config.DbType;
 
 import lombok.Data;
 

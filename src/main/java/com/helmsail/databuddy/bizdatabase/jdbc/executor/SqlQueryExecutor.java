@@ -1,4 +1,4 @@
-package com.helmsail.databuddy.jdbc.executor;
+package com.helmsail.databuddy.bizdatabase.jdbc.executor;
 
 import java.sql.Connection;
 import java.sql.ResultSet;
@@ -8,11 +8,11 @@ import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.List;
 
+import com.helmsail.databuddy.bizdatabase.jdbc.model.ColumnInfo;
+import com.helmsail.databuddy.bizdatabase.jdbc.model.TableData;
+import com.helmsail.databuddy.bizdatabase.jdbc.model.TableInfo;
 import com.helmsail.databuddy.exception.BusinessException;
 import com.helmsail.databuddy.exception.ErrorCode;
-import com.helmsail.databuddy.jdbc.model.ColumnInfo;
-import com.helmsail.databuddy.jdbc.model.TableData;
-import com.helmsail.databuddy.jdbc.model.TableInfo;
 
 /**
  * SQL 查询执行器:通用执行与结果转换,不含任何方言分支(方言差异全部由 SqlDialect 提供)

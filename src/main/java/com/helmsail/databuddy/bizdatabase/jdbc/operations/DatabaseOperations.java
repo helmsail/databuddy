@@ -1,12 +1,12 @@
-package com.helmsail.databuddy.jdbc.operations;
+package com.helmsail.databuddy.bizdatabase.jdbc.operations;
 
 import java.util.List;
 
-import com.helmsail.databuddy.jdbc.config.DbConfig;
-import com.helmsail.databuddy.jdbc.config.DbType;
-import com.helmsail.databuddy.jdbc.model.ColumnInfo;
-import com.helmsail.databuddy.jdbc.model.TableData;
-import com.helmsail.databuddy.jdbc.model.TableInfo;
+import com.helmsail.databuddy.bizdatabase.jdbc.config.DbConfig;
+import com.helmsail.databuddy.bizdatabase.jdbc.config.DbType;
+import com.helmsail.databuddy.bizdatabase.jdbc.model.ColumnInfo;
+import com.helmsail.databuddy.bizdatabase.jdbc.model.TableData;
+import com.helmsail.databuddy.bizdatabase.jdbc.model.TableInfo;
 
 /**
  * 业务数据库操作:查看表结构与表内容,每种数据库类型一个实现

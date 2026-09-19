@@ -12,9 +12,12 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.helmsail.databuddy.bizdatabase.jdbc.model.ColumnInfo;
+import com.helmsail.databuddy.bizdatabase.jdbc.model.TableInfo;
+
 /**
- * 业务库模块唯一入口:配置(列表/新增/更新/删除;新增与更新会先探测真实连通)与表关系(列表/新增/删除);
- * 只做 HTTP 层,编排全在 BizDatabaseService
+ * 业务库模块唯一入口:配置(列表/新增/更新/删除;新增与更新会先探测真实连通)、表清单与表结构查询、
+ * 表关系(列表/新增/删除);只做 HTTP 层,编排全在 BizDatabaseService
  */
 @RestController
 @RequestMapping("/bizdatabase")
@@ -49,6 +52,18 @@ public class BizDatabaseController {
 	@DeleteMapping("/configs/{id}")
 	public void deleteConfig(@PathVariable("id") Long id) {
 		bizDatabaseService.deleteConfig(id);
+	}
+
+	/** 某库的表清单(直连实时查询) */
+	@GetMapping("/configs/{id}/tables")
+	public List<TableInfo> listTables(@PathVariable("id") Long id) {
+		return bizDatabaseService.listTables(id);
+	}
+
+	/** 某表的结构(直连实时查询) */
+	@GetMapping("/configs/{id}/tables/{table}/columns")
+	public List<ColumnInfo> listColumns(@PathVariable("id") Long id, @PathVariable("table") String table) {
+		return bizDatabaseService.listColumns(id, table);
 	}
 
 	/** 某库的关系列表 */

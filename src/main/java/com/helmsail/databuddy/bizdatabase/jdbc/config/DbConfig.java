@@ -1,4 +1,4 @@
-package com.helmsail.databuddy.jdbc.config;
+package com.helmsail.databuddy.bizdatabase.jdbc.config;
 
 import lombok.AllArgsConstructor;
 import lombok.Data;

@@ -1,4 +1,4 @@
-package com.helmsail.databuddy.jdbc.dialect;
+package com.helmsail.databuddy.bizdatabase.jdbc.dialect;
 
 import java.util.EnumMap;
 import java.util.List;
@@ -6,9 +6,9 @@ import java.util.Map;
 
 import org.springframework.stereotype.Component;
 
+import com.helmsail.databuddy.bizdatabase.jdbc.config.DbType;
 import com.helmsail.databuddy.exception.BusinessException;
 import com.helmsail.databuddy.exception.ErrorCode;
-import com.helmsail.databuddy.jdbc.config.DbType;
 
 /**
  * 方言工厂:按数据库类型索引所有 SqlDialect 实现(由 Spring 自动注入)

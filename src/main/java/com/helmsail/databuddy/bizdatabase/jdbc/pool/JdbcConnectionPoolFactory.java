@@ -1,4 +1,4 @@
-package com.helmsail.databuddy.jdbc.pool;
+package com.helmsail.databuddy.bizdatabase.jdbc.pool;
 
 import java.sql.Connection;
 import java.sql.DriverManager;
@@ -7,9 +7,9 @@ import java.util.concurrent.ConcurrentHashMap;
 
 import org.springframework.stereotype.Component;
 
+import com.helmsail.databuddy.bizdatabase.jdbc.config.DbConfig;
 import com.helmsail.databuddy.exception.BusinessException;
 import com.helmsail.databuddy.exception.ErrorCode;
-import com.helmsail.databuddy.jdbc.config.DbConfig;
 
 import jakarta.annotation.PreDestroy;
 

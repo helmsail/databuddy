@@ -1,4 +1,4 @@
-package com.helmsail.databuddy.jdbc.operations;
+package com.helmsail.databuddy.bizdatabase.jdbc.operations;
 
 import java.util.EnumMap;
 import java.util.List;
@@ -6,9 +6,9 @@ import java.util.Map;
 
 import org.springframework.stereotype.Component;
 
+import com.helmsail.databuddy.bizdatabase.jdbc.config.DbType;
 import com.helmsail.databuddy.exception.BusinessException;
 import com.helmsail.databuddy.exception.ErrorCode;
-import com.helmsail.databuddy.jdbc.config.DbType;
 
 /**
  * 数据库操作工厂:按数据库类型获取对应的 DatabaseOperations(由 Spring 注入所有实现)

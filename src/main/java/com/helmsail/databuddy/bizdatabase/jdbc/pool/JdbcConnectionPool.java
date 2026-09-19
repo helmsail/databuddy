@@ -1,12 +1,12 @@
-package com.helmsail.databuddy.jdbc.pool;
+package com.helmsail.databuddy.bizdatabase.jdbc.pool;
 
 import java.sql.Connection;
 import java.sql.SQLException;
 
 import com.alibaba.druid.pool.DruidDataSource;
+import com.helmsail.databuddy.bizdatabase.jdbc.config.DbConfig;
 import com.helmsail.databuddy.exception.BusinessException;
 import com.helmsail.databuddy.exception.ErrorCode;
-import com.helmsail.databuddy.jdbc.config.DbConfig;
 
 /**
  * 业务数据库连接池:基于 Druid 封装,每个数据源一个实例。

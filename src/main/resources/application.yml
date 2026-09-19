@@ -3,7 +3,7 @@ spring:
     name: databuddy
   reactor:
     context-propagation: auto # Reactor 上下文自动传播:图上节点(@Observed)的 span 才能挂到 HTTP 请求的 trace 上
-  datasource: # 系统库(应用自有:提示词、图检查点等元数据;被分析的业务库走 databuddy jdbc 包)
+  datasource: # 系统库(应用自有:提示词、图检查点等元数据;被分析的业务库走 bizdatabase 包,jdbc 引擎内嵌于此)
     url: jdbc:mysql://localhost:3306/databuddy?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
     username: root
     password: root

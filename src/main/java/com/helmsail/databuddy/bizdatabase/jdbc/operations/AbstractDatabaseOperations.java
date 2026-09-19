@@ -1,4 +1,4 @@
-package com.helmsail.databuddy.jdbc.operations;
+package com.helmsail.databuddy.bizdatabase.jdbc.operations;
 
 import java.sql.Connection;
 import java.sql.SQLException;
@@ -6,17 +6,17 @@ import java.util.List;
 
 import io.micrometer.observation.annotation.Observed;
 
+import com.helmsail.databuddy.bizdatabase.jdbc.config.DbConfig;
+import com.helmsail.databuddy.bizdatabase.jdbc.config.DbType;
+import com.helmsail.databuddy.bizdatabase.jdbc.dialect.SqlDialect;
+import com.helmsail.databuddy.bizdatabase.jdbc.dialect.SqlDialectFactory;
+import com.helmsail.databuddy.bizdatabase.jdbc.executor.SqlQueryExecutor;
+import com.helmsail.databuddy.bizdatabase.jdbc.model.ColumnInfo;
+import com.helmsail.databuddy.bizdatabase.jdbc.model.TableData;
+import com.helmsail.databuddy.bizdatabase.jdbc.model.TableInfo;
+import com.helmsail.databuddy.bizdatabase.jdbc.pool.JdbcConnectionPoolFactory;
 import com.helmsail.databuddy.exception.BusinessException;
 import com.helmsail.databuddy.exception.ErrorCode;
-import com.helmsail.databuddy.jdbc.config.DbConfig;
-import com.helmsail.databuddy.jdbc.config.DbType;
-import com.helmsail.databuddy.jdbc.dialect.SqlDialect;
-import com.helmsail.databuddy.jdbc.dialect.SqlDialectFactory;
-import com.helmsail.databuddy.jdbc.executor.SqlQueryExecutor;
-import com.helmsail.databuddy.jdbc.model.ColumnInfo;
-import com.helmsail.databuddy.jdbc.model.TableData;
-import com.helmsail.databuddy.jdbc.model.TableInfo;
-import com.helmsail.databuddy.jdbc.pool.JdbcConnectionPoolFactory;
 
 /**
  * DatabaseOperations 抽象基类:编排 连接池 + 方言 + 执行器,子类只需声明类型
