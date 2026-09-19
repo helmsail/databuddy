@@ -90,6 +90,11 @@ public class SessionMemoryService {
 		mapper.deleteLatestTurn(sessionId);
 	}
 
+	/** 清某线程键的全部记忆条目(删会话编排中由图侧接口调用;本组件不判断时机) */
+	public void deleteBySession(String sessionId) {
+		mapper.deleteBySession(sessionId);
+	}
+
 	/** 溢出压缩:窗口外最老的若干轮 + 旧摘要 → AI 压成新摘要;失败跳过(下轮再试) */
 	private void compressOverflow(String sessionId) {
 		List<SessionMemory> recent = mapper.selectRecentTurns(sessionId, WINDOW_TURNS + 1);

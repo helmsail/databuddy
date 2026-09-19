@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.PosixFilePermissions;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -96,6 +97,7 @@ public class Sandbox {
 		catch (IOException e) {
 			throw new BusinessException(ErrorCode.SYSTEM_ERROR, "创建沙箱工作目录失败: " + e.getMessage(), e);
 		}
+		relaxPermissions(workDir); // 容器以 uid 1000 运行,需可写此目录(容器化/Linux 部署必需;非 POSIX 文件系统跳过)
 		DockerCli.ProcessResult result = DockerCli.runProcess(List.of(
 				"docker", "run", "-d", "--name", name, "--pull=never", "--init",
 				"--label", LABEL, // 便于启动时清理强杀残留
@@ -113,6 +115,17 @@ public class Sandbox {
 		}
 		if (result.exitCode() != 0) {
 			throw new BusinessException(ErrorCode.SYSTEM_ERROR, "创建沙箱容器失败: " + result.stderr());
+		}
+	}
+
+	/** 放开工作目录权限(rwxrwxrwx):沙箱容器以 uid 1000 运行,需能写入(含运行期自建 output 目录);
+	 * Windows/挂载文件系统等非 POSIX 场景静默跳过(chmod 无效但写入本就放行) */
+	private static void relaxPermissions(Path dir) {
+		try {
+			Files.setPosixFilePermissions(dir, PosixFilePermissions.fromString("rwxrwxrwx"));
+		}
+		catch (UnsupportedOperationException | IOException e) {
+			log.debug("跳过工作目录权限放开(非 POSIX 文件系统): {}", e.getMessage());
 		}
 	}
 

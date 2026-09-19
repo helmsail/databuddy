@@ -10,7 +10,7 @@ import reactor.core.publisher.Sinks;
 
 /**
  * 一次执行的现场(运行表的值):输出口 sink、要掐的订阅 disposable、
- * 记忆要用的输入与最终回复、停止旗标——都收在这一个对象里,只在"运行期间"存在
+ * agentId/输入与最终回复、停止旗标——都收在这一个对象里,只在"运行期间"存在
  */
 @Getter
 class GraphRun {
@@ -18,6 +18,8 @@ class GraphRun {
 	private final String runId;
 
 	private final String sessionId;
+
+	private final long agentId;
 
 	private final String input;
 
@@ -29,9 +31,10 @@ class GraphRun {
 
 	private final AtomicBoolean stopped = new AtomicBoolean(false);
 
-	GraphRun(String runId, String sessionId, String input, Sinks.Many<ServerSentEvent<GraphSseChunk>> sink) {
+	GraphRun(String runId, String sessionId, long agentId, String input, Sinks.Many<ServerSentEvent<GraphSseChunk>> sink) {
 		this.runId = runId;
 		this.sessionId = sessionId;
+		this.agentId = agentId;
 		this.input = input;
 		this.sink = sink;
 	}

@@ -26,6 +26,9 @@ public final class GraphKeys {
 	/** 本轮输入 */
 	public static final String INPUT = "input";
 
+	/** 本轮对话的 agent(数据链身份轴;入口校验后注入) */
+	public static final String AGENT_ID = "agent_id";
+
 	/** 上文(进图前由记忆构建注入) */
 	public static final String HISTORY = "history";
 

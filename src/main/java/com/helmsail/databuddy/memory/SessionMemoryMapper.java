@@ -40,4 +40,8 @@ public interface SessionMemoryMapper {
 	@Delete("DELETE FROM session_memory WHERE session_id = #{sessionId} AND kind = 'summary' AND id <> #{keepId}")
 	void deleteOldSummaries(@Param("sessionId") String sessionId, @Param("keepId") Long keepId);
 
+	/** 删除某线程键的全部记忆条目(图侧清记忆接口用;客户端删会话编排时调用) */
+	@Delete("DELETE FROM session_memory WHERE session_id = #{sessionId}")
+	void deleteBySession(@Param("sessionId") String sessionId);
+
 }

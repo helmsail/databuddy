@@ -6,6 +6,7 @@ import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.http.server.reactive.ServerHttpResponse;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.CrossOrigin;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -20,7 +21,7 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Sinks;
 
 /**
- * 图入口(唯一 Controller):SSE 发起执行,另提供停止。
+ * 图入口(唯一 Controller):SSE 发起执行,另提供停止与线程记忆清理。
  * 只做 HTTP 层:建 sink、放行可推的帧、断连兜底停止;执行编排全在 GraphService
  */
 @Slf4j
@@ -35,14 +36,15 @@ public class GraphController {
 		this.graphService = graphService;
 	}
 
-	/** 执行入口(SSE):GET /graph/run?input=…&sessionId=…(会话号可空,生成后随事件回传) */
+	/** 执行入口(SSE):GET /graph/run?agentId=…&input=…&sessionId=…(会话号可空,生成后随事件回传) */
 	@GetMapping(value = "/run", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-	public Flux<ServerSentEvent<GraphSseChunk>> run(@RequestParam("input") String input,
+	public Flux<ServerSentEvent<GraphSseChunk>> run(@RequestParam("agentId") long agentId,
+			@RequestParam("input") String input,
 			@RequestParam(value = "sessionId", required = false) String sessionId,
 			ServerHttpResponse response) {
 		response.getHeaders().add("Cache-Control", "no-cache"); // SSE 不缓存
 		Sinks.Many<ServerSentEvent<GraphSseChunk>> sink = Sinks.many().unicast().onBackpressureBuffer();
-		String runId = graphService.stream(sink, input, sessionId);
+		String runId = graphService.stream(sink, agentId, input, sessionId);
 		return sink.asFlux()
 			// 只放行"有文本的文本帧"与协议帧
 			.filter(sse -> {
@@ -75,6 +77,13 @@ public class GraphController {
 		else {
 			throw new BusinessException(ErrorCode.INVALID_INPUT, "停止必须携带 runId 或 sessionId");
 		}
+		return ResponseEntity.noContent().build();
+	}
+
+	/** 清某线程键下的图侧记忆(客户端编排"删会话"时调用;图不解释该键含义) */
+	@DeleteMapping("/memory")
+	public ResponseEntity<Void> clearMemory(@RequestParam("sessionId") String sessionId) {
+		graphService.clearMemory(sessionId);
 		return ResponseEntity.noContent().build();
 	}
 

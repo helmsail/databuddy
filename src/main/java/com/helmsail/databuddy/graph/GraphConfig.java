@@ -39,6 +39,7 @@ public class GraphConfig {
 			throws GraphStateException {
 		KeyStrategyFactory keyStrategyFactory = () -> Map.of(
 				GraphKeys.INPUT, KeyStrategy.REPLACE,
+				GraphKeys.AGENT_ID, KeyStrategy.REPLACE,
 				GraphKeys.HISTORY, KeyStrategy.REPLACE,
 				GraphKeys.FINAL_ANSWER, KeyStrategy.REPLACE,
 				GraphKeys.CLASSIFICATION, KeyStrategy.REPLACE);

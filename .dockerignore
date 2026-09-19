@@ -1,0 +1,15 @@
+# 应用镜像构建上下文裁剪(COPY 只用 pom.xml + src;其余全部排除)
+.git
+.gitignore
+.gitattributes
+.env
+.idea
+.vscode
+*.iml
+target
+data
+docs
+HELP.md
+mvnw
+mvnw.cmd
+.mvn

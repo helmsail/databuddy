@@ -1,6 +1,6 @@
 -- 系统库初始化脚本:启动幂等执行(建表 IF NOT EXISTS,可反复跑)
 -- 组织约定:表结构(DDL)统一放前面,初始化数据(种子 INSERT)统一放最后
--- 内容:节点提示词模板(node_prompt_template)、会话记忆(session_memory)、模型配置(ai_model_config)、业务库配置(biz_database_config)与表级关联(biz_table_relation)、智能体(agent)与表绑定(agent_biz_table)、业务术语(agent_biz_term)、业务问答(agent_biz_qa)、业务文档(agent_biz_document)
+-- 内容:节点提示词模板(node_prompt_template)、会话记忆(session_memory)、模型配置(ai_model_config)、业务库配置(biz_database_config)与表级关联(biz_table_relation)、智能体(agent)与表绑定(agent_biz_table)、业务术语(agent_biz_term)、业务问答(agent_biz_qa)、业务文档(agent_biz_document)、会话(session)与会话消息(session_message)
 
 -- ============ 表结构 ============
 
@@ -153,6 +153,29 @@ CREATE TABLE IF NOT EXISTS agent_biz_document (
 	update_time      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
 	UNIQUE (agent_id, name),
 	INDEX idx_agent_status (agent_id, embedding_status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- 会话(用户侧历史:一行 = 一次连续对话;主键即会话 UUID;纯 CRUD,与图零耦合)
+-- 历史写入由客户端编排(存 user → 跑图 → 收尾存 assistant);删除为硬删(级联清消息);图侧清理由客户端调 /graph 接口
+CREATE TABLE IF NOT EXISTS session (
+	id          VARCHAR(36)  NOT NULL,
+	agent_id    BIGINT       NOT NULL,
+	title       VARCHAR(128) NULL,
+	create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+	PRIMARY KEY (id),
+	INDEX idx_agent (agent_id, update_time)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- 会话消息(无损全文;role = USER / ASSISTANT;message_type 起步 text,留扩展位;随会话硬删而清理)
+CREATE TABLE IF NOT EXISTS session_message (
+	id           BIGINT AUTO_INCREMENT PRIMARY KEY,
+	session_id   VARCHAR(36) NOT NULL,
+	role         VARCHAR(16) NOT NULL,
+	content      MEDIUMTEXT  NOT NULL,
+	message_type VARCHAR(32) NOT NULL DEFAULT 'text',
+	create_time  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	INDEX idx_session (session_id, id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ============ 初始化数据(种子) ============

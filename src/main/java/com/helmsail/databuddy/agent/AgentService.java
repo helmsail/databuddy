@@ -19,6 +19,7 @@ import com.helmsail.databuddy.agent.bizterm.AgentBizTerm;
 import com.helmsail.databuddy.agent.bizterm.AgentBizTermService;
 import com.helmsail.databuddy.exception.BusinessException;
 import com.helmsail.databuddy.exception.ErrorCode;
+import com.helmsail.databuddy.session.SessionService;
 import com.helmsail.databuddy.vectorize.IndexSourceType;
 import com.helmsail.databuddy.vectorize.VectorMetadata;
 import com.helmsail.databuddy.vectorize.VectorService;
@@ -28,7 +29,7 @@ import lombok.extern.slf4j.Slf4j;
 /**
  * 智能体服务:agent 域的唯一对外口(身份 + 跨域横切 + 检索用例);域外只认本类,子域 CRUD 不镜像进来。
  * 检索:跨四类来源向量命中 + 按来源回源补齐(QA 补答案、术语补同义词、文档补名称);
- * 级联删除:四域逐行清(行 + 向量 + 物理文件)→ 向量兜底清扫 → 删 agent 行
+ * 级联删除:四域逐行清(行 + 向量 + 物理文件)+ 会话域(行 + 消息)→ 向量兜底清扫 → 删 agent 行
  */
 @Slf4j
 @Service
@@ -44,16 +45,19 @@ public class AgentService {
 
 	private final AgentBizDocumentService agentBizDocumentService;
 
+	private final SessionService sessionService;
+
 	private final VectorService vectorService;
 
 	public AgentService(AgentMapper agentMapper, AgentBizTableService agentBizTableService,
 			AgentBizTermService agentBizTermService, AgentBizQaService agentBizQaService,
-			AgentBizDocumentService agentBizDocumentService, VectorService vectorService) {
+			AgentBizDocumentService agentBizDocumentService, SessionService sessionService, VectorService vectorService) {
 		this.agentMapper = agentMapper;
 		this.agentBizTableService = agentBizTableService;
 		this.agentBizTermService = agentBizTermService;
 		this.agentBizQaService = agentBizQaService;
 		this.agentBizDocumentService = agentBizDocumentService;
+		this.sessionService = sessionService;
 		this.vectorService = vectorService;
 	}
 
@@ -85,7 +89,7 @@ public class AgentService {
 		return agentMapper.selectById(id);
 	}
 
-	/** 删除智能体(级联):四域逐行清(行 + 向量 + 物理文件)→ 向量兜底清扫 → 删 agent 行 */
+	/** 删除智能体(级联):四域逐行清(行 + 向量 + 物理文件)+ 会话域(行 + 消息)→ 向量兜底清扫 → 删 agent 行 */
 	@Transactional
 	public void delete(long id) {
 		Agent agent = requireAgent(id);
@@ -102,6 +106,7 @@ public class AgentService {
 		for (AgentBizDocument document : agentBizDocumentService.list(id)) {
 			agentBizDocumentService.delete(document.getId());
 		}
+		sessionService.deleteByAgent(id);   // 会话域:行 + 消息
 		vectorService.deleteByAgent(id);   // 兜底:清残留向量(防历史脏数据)
 		agentMapper.deleteById(id);
 		log.info("agent 删除(级联): {} (#{})", agent.getName(), id);
