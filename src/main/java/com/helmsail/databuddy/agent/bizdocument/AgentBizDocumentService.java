@@ -87,6 +87,11 @@ public class AgentBizDocumentService {
 		return mapper.selectByAgent(agentId);
 	}
 
+	/** 按 id 查;不存在返回 null(检索回源用) */
+	public AgentBizDocument get(long id) {
+		return mapper.selectById(id);
+	}
+
 	/**
 	 * 上传文档:预检(agent 存在、名字未占用)→ 文件落存储(按 agent 分目录)→ 行落库 → worker 异步切分向量化,立即返回。
 	 * name 缺省取文件名;仅接受白名单扩展名(文本类 + pdf/word/excel/ppt 等常见格式,其余直接拒绝)

@@ -46,6 +46,11 @@ public class AgentBizQaService {
 		return mapper.selectByAgent(agentId);
 	}
 
+	/** 按 id 查;不存在返回 null(检索回源用) */
+	public AgentBizQa get(long id) {
+		return mapper.selectById(id);
+	}
+
 	/** 新增问答:agent 必须存在;落库后立即同步问题向量(失败不阻断,FAILED + 原因落库待重试) */
 	public AgentBizQa add(long agentId, AgentBizQa qa) {
 		if (agentMapper.selectById(agentId) == null) {

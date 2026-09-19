@@ -46,6 +46,11 @@ public class AgentBizTermService {
 		return mapper.selectByAgent(agentId);
 	}
 
+	/** 按 id 查;不存在返回 null(检索回源用) */
+	public AgentBizTerm get(long id) {
+		return mapper.selectById(id);
+	}
+
 	/** 新增术语:agent 必须存在;落库后立即同步向量(失败不阻断,FAILED + 原因落库待重试) */
 	public AgentBizTerm add(long agentId, AgentBizTerm term) {
 		if (agentMapper.selectById(agentId) == null) {
