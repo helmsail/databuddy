@@ -20,7 +20,7 @@ import lombok.extern.slf4j.Slf4j;
 /**
  * 术语服务:agent_biz_term 行的生命周期(新增 / 修改 / 删除 / 列表)与单条同步向量化。
  * CRUD 即触发(同步等待结果):向量化内容 = 术语 + 释义(WHOLE 一块),走 VectorService 唯一口;
- * 同步失败不阻断落库,FAILED + 原因落章,手动 retryUnsynced 与定时兜底共用
+ * 同步失败不阻断落库,FAILED + 原因落库,手动 retryUnsynced 与定时兜底共用
  */
 @Slf4j
 @Service
@@ -46,7 +46,7 @@ public class AgentBizTermService {
 		return mapper.selectByAgent(agentId);
 	}
 
-	/** 新增术语:agent 必须存在;落库后立即同步向量(失败不阻断,FAILED + 原因落章待重试) */
+	/** 新增术语:agent 必须存在;落库后立即同步向量(失败不阻断,FAILED + 原因落库待重试) */
 	public AgentBizTerm add(long agentId, AgentBizTerm term) {
 		if (agentMapper.selectById(agentId) == null) {
 			throw new BusinessException(ErrorCode.NOT_FOUND, "agent 不存在: " + agentId);
@@ -116,7 +116,7 @@ public class AgentBizTermService {
 		}
 	}
 
-	/** 单条同步:拼文本 → 索引 → 落状态;失败不抛出,FAILED + 原因落章 */
+	/** 单条同步:拼文本 → 索引 → 落状态;失败不抛出,FAILED + 原因落库 */
 	private void syncRow(AgentBizTerm term) {
 		try {
 			String content = buildContent(term);
