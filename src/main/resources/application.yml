@@ -28,6 +28,8 @@ databuddy:
     borrow-timeout: 30s # 借容器等待上限,超时视为容量耗尽
     exec-timeout: 60s # 单次执行超时,超时容器直接销毁
     work-root: ./data/sandbox # 工作目录根(宿主侧,挂载进容器 /work)
+  crypto:
+    aes-key: "SSM6kT5gJH87byj4EGBZ5cm9yKkLbVvSy946Y5oKKdI=" # 敏感字段落库加密(AES-256-GCM,Base64 32 字节);生成:AesUtil.generateKey()
 
 management:
   tracing:

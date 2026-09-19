@@ -1,6 +1,6 @@
 -- 系统库初始化脚本:启动幂等执行(建表 IF NOT EXISTS,可反复跑)
 -- 组织约定:表结构(DDL)统一放前面,初始化数据(种子 INSERT)统一放最后
--- 内容:节点提示词模板(node_prompt_template)、会话记忆(session_memory)、模型配置(ai_model_config)
+-- 内容:节点提示词模板(node_prompt_template)、会话记忆(session_memory)、模型配置(ai_model_config)、业务库配置(biz_database_config)与表级关联(biz_table_relation)
 
 -- ============ 表结构 ============
 
@@ -48,6 +48,36 @@ CREATE TABLE IF NOT EXISTS ai_model_config (
 	create_time       DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
 	update_time       DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
 	UNIQUE (model_type, is_active)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- 业务库配置:一行 = 一个可分析的库(粒度直接到库,connection_url 自带库名)
+-- password:AES-256-GCM 密文(明文只在 API 出入);密钥见 databuddy.crypto.aes-key
+CREATE TABLE IF NOT EXISTS biz_database_config (
+	id             BIGINT AUTO_INCREMENT PRIMARY KEY,
+	name           VARCHAR(128) NOT NULL,
+	db_type        VARCHAR(16)  NOT NULL,
+	username       VARCHAR(128) NOT NULL,
+	password       VARCHAR(256) NULL,
+	connection_url VARCHAR(512) NOT NULL,
+	description    VARCHAR(256) NULL,
+	create_time    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	update_time    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- 表级关联:一行 = 一条列对关联(source_table.source_column → target_table.target_column)
+-- relation_type 数量关系(方向 source → target):ONE_TO_ONE / ONE_TO_MANY / MANY_TO_ONE / MANY_TO_MANY
+CREATE TABLE IF NOT EXISTS biz_table_relation (
+	id                 BIGINT AUTO_INCREMENT PRIMARY KEY,
+	database_config_id BIGINT       NOT NULL,
+	source_table_name  VARCHAR(128) NOT NULL,
+	source_column_name VARCHAR(128) NOT NULL,
+	target_table_name  VARCHAR(128) NOT NULL,
+	target_column_name VARCHAR(128) NOT NULL,
+	relation_type      VARCHAR(16)  NOT NULL,
+	description        VARCHAR(256) NULL,
+	create_time        DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	update_time        DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+	INDEX idx_database (database_config_id, source_table_name)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ============ 初始化数据(种子) ============
