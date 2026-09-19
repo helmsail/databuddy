@@ -1,6 +1,7 @@
 package com.helmsail.databuddy.agent;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 
@@ -117,8 +118,13 @@ public class AgentService {
 	 * 供域外(图节点等)消费;只回结构化块,上下文成文由调用方做
 	 */
 	public List<RetrievedChunk> retrieve(long agentId, String query, int topK) {
+		return retrieve(agentId, query, topK, null);
+	}
+
+	/** 检索(限定来源类型;sourceTypes 空 = 全部来源):知识召回只取知识源,表块归 Schema 召回 */
+	public List<RetrievedChunk> retrieve(long agentId, String query, int topK, Collection<IndexSourceType> sourceTypes) {
 		requireAgent(agentId);
-		List<Document> hits = vectorService.search(agentId, query, topK);
+		List<Document> hits = vectorService.search(agentId, query, topK, sourceTypes);
 		List<RetrievedChunk> chunks = new ArrayList<>(hits.size());
 		for (Document hit : hits) {
 			IndexSourceType sourceType = IndexSourceType.valueOf(metadata(hit, VectorMetadata.SOURCE_TYPE));

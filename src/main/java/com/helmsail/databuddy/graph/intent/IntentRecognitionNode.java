@@ -1,4 +1,4 @@
-package com.helmsail.databuddy.graph;
+package com.helmsail.databuddy.graph.intent;
 
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
@@ -13,6 +13,7 @@ import com.alibaba.cloud.ai.graph.action.AsyncNodeAction;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.helmsail.databuddy.aimodel.AiModelServiceFactory;
+import com.helmsail.databuddy.graph.GraphKeys;
 import com.helmsail.databuddy.graph.util.NodeUtils;
 import com.helmsail.databuddy.prompt.NodePromptTemplateMapper;
 

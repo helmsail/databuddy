@@ -26,7 +26,7 @@ import reactor.core.publisher.Sinks;
 import reactor.core.scheduler.Schedulers;
 
 /**
- * 图的服务:只做执行编排(骨架版,当前拓扑:意图识别)。
+ * 图的服务:只做执行编排(当前拓扑:意图识别 → 知识召回)。
  * 图由 GraphConfig 装配注入;本服务自订阅图、组装事件、登记运行(停止/断连兜底靠运行表)、
  * 完成/停止/出错时释放检查点,并把"成功的轮"落进会话记忆(在 done 之后执行,不挡用户)。
  * 记忆的读写都在图外:进图前 buildContext 注入 HISTORY,跑完 finishTurn 写回(无输出自动跳过);
@@ -93,6 +93,13 @@ public class GraphService {
 			if (StringUtils.hasText(answer)) {
 				run.setFinalAnswer(answer);
 			}
+			return;
+		}
+		// 中间节点完成:写有过程状态(NODE_STATUS)的节点推一条 step 帧(轻量过程播报;与正文分离,对齐主流);同一状态只播一次
+		String note = output.state().value(GraphKeys.NODE_STATUS, String.class).orElse(null);
+		if (StringUtils.hasText(note) && !note.equals(run.getLastStep())) {
+			run.setLastStep(note);
+			emit(run, GraphSseChunk.builder().eventType(GraphKeys.STEP).node(output.node()).text(note).build());
 		}
 		// 非流式节点不出片段帧;将来流式节点接入后,在这里把片段转成事件推给前端
 	}

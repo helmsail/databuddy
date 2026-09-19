@@ -16,10 +16,16 @@ public final class GraphKeys {
 	/** 错误帧:本次执行失败 */
 	public static final String ERROR = "error";
 
+	/** 过程帧:节点完成的轻量播报(结构化事件,与正文分离;对齐 AG-UI STEP / Dify node_finished) */
+	public static final String STEP = "step";
+
 	// —— 节点 ID(与 node_prompt_template.name 对齐) ——
 
 	/** 意图识别节点 */
 	public static final String INTENT_RECOGNITION = "intent-recognition";
+
+	/** 知识召回节点(数据链首节点) */
+	public static final String KNOWLEDGE_RECALL = "knowledge-recall";
 
 	// —— 状态键(OverAllState;随节点接入按需增补) ——
 
@@ -35,8 +41,14 @@ public final class GraphKeys {
 	/** 最终回复(END 输出的全量状态中提取) */
 	public static final String FINAL_ANSWER = "final_answer";
 
-	/** 意图分类结果:data_analysis / chat(将来条件边的映射键) */
+	/** 意图分类结果:data_analysis / chat(意图识别产出;IntentRecognitionDispatcher 据此分流) */
 	public static final String CLASSIFICATION = "classification";
+
+	/** 召回的业务知识文本(术语/问答/文档,带来源标注;无命中为"无") */
+	public static final String KNOWLEDGE = "knowledge";
+
+	/** 节点过程状态:人类可读一句话,由 GraphService 转成 step 帧(不写则不播) */
+	public static final String NODE_STATUS = "node_status";
 
 	// —— 意图分类取值(意图识别节点的产出) ——
 

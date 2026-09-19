@@ -207,3 +207,21 @@ SELECT 'intent-recognition',
 1, 1
 FROM DUAL
 WHERE NOT EXISTS (SELECT 1 FROM node_prompt_template WHERE name = 'intent-recognition');
+
+INSERT INTO node_prompt_template (name, content, version, enabled)
+SELECT 'knowledge-recall',
+'你是数据分析工作流的业务知识召回器:先忠实还原用户意图,把"最新用户输入"结合对话历史重写为一条可独立理解的完整查询(消解指代与省略,例如"那个呢""上个月的呢"要还原出完整对象与时间范围);不要改变原意,不要添加用户没有提出的分析维度。
+
+【对话历史】
+{history}
+
+【最新用户输入】
+{query}
+
+要求:仅输出 JSON,不要输出其他内容;standalone_query 为重写后的完整查询(中文白话即可,不是 SQL)。
+示例:
+1) 历史(无),输入"我们公司哪个产品卖得最好?" → {"standalone_query": "我们公司哪个产品卖得最好"}
+2) 历史(在聊员工工资),输入"那个呢?" → {"standalone_query": "员工的工资情况"}',
+1, 1
+FROM DUAL
+WHERE NOT EXISTS (SELECT 1 FROM node_prompt_template WHERE name = 'knowledge-recall');

@@ -1,9 +1,11 @@
 package com.helmsail.databuddy.vectorize;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 import org.springframework.ai.document.Document;
 import org.springframework.ai.vectorstore.SearchRequest;
@@ -77,11 +79,28 @@ public class VectorService {
 
 	/** 按 agent 检索(跨全部来源类型);命中块自带 metadata 与相似度,回源由调用方按 source_type/source_id 完成 */
 	public List<Document> search(long agentId, String query, int topK) {
+		return search(agentId, query, topK, null);
+	}
+
+	/** 按 agent + 指定来源类型检索(sourceTypes 空 = 全部来源) */
+	public List<Document> search(long agentId, String query, int topK, Collection<IndexSourceType> sourceTypes) {
 		return vectorStore.similaritySearch(SearchRequest.builder()
 			.query(query)
 			.topK(topK)
-			.filterExpression(agentFilter(agentId))
+			.filterExpression(filterOf(agentId, sourceTypes))
 			.build());
+	}
+
+	/** 过滤表达式组装(检索与删除共用):agent 锚点 + 可选来源类型 OR 组 */
+	private String filterOf(long agentId, Collection<IndexSourceType> sourceTypes) {
+		String filter = agentFilter(agentId);
+		if (sourceTypes == null || sourceTypes.isEmpty()) {
+			return filter;
+		}
+		String in = sourceTypes.stream()
+			.map(type -> VectorMetadata.SOURCE_TYPE + " == '" + type.name() + "'")
+			.collect(Collectors.joining(" || "));
+		return filter + " && (" + in + ")";
 	}
 
 	/** agent 过滤表达式(删除与检索共用) */

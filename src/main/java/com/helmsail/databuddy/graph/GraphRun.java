@@ -27,6 +27,9 @@ class GraphRun {
 
 	private volatile String finalAnswer;
 
+	/** 已播报的过程状态(step 帧去重:同一状态只播一次) */
+	private volatile String lastStep;
+
 	private volatile Disposable disposable;
 
 	private final AtomicBoolean stopped = new AtomicBoolean(false);
@@ -41,6 +44,10 @@ class GraphRun {
 
 	void setFinalAnswer(String finalAnswer) {
 		this.finalAnswer = finalAnswer;
+	}
+
+	void setLastStep(String lastStep) {
+		this.lastStep = lastStep;
 	}
 
 	/** 订阅建立后回填;若期间已被要求停止,立即掐掉 */
