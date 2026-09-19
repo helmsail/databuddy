@@ -5,7 +5,7 @@ import java.util.List;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
-import com.helmsail.databuddy.model.ModelServiceFactory;
+import com.helmsail.databuddy.aimodel.AiModelServiceFactory;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -46,11 +46,11 @@ public class SessionMemoryService {
 
 	private final SessionMemoryMapper mapper;
 
-	private final ModelServiceFactory modelServiceFactory;
+	private final AiModelServiceFactory aiModelServiceFactory;
 
-	public SessionMemoryService(SessionMemoryMapper mapper, ModelServiceFactory modelServiceFactory) {
+	public SessionMemoryService(SessionMemoryMapper mapper, AiModelServiceFactory aiModelServiceFactory) {
 		this.mapper = mapper;
-		this.modelServiceFactory = modelServiceFactory;
+		this.aiModelServiceFactory = aiModelServiceFactory;
 	}
 
 	/** 进图前:构建上文文本(【此前对话摘要】+ 最近窗口轮,逐行"用户: xx / 助手: xx");无记忆返回 "(无)" */
@@ -129,7 +129,7 @@ public class SessionMemoryService {
 		}
 		String user = (StringUtils.hasText(oldSummary) ? "已有摘要:\n" + oldSummary + "\n\n" : "")
 				+ "新增对话:\n" + dialog;
-		return modelServiceFactory.getChatClient().prompt().user(SUMMARY_PROMPT + "\n\n" + user).call().content();
+		return aiModelServiceFactory.getChatClient().prompt().user(SUMMARY_PROMPT + "\n\n" + user).call().content();
 	}
 
 	/** 截断;null 原样返回 */

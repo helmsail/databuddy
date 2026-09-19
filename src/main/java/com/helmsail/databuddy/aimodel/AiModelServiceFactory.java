@@ -1,4 +1,4 @@
-package com.helmsail.databuddy.model;
+package com.helmsail.databuddy.aimodel;
 
 import io.micrometer.observation.ObservationRegistry;
 
@@ -32,7 +32,7 @@ import lombok.extern.slf4j.Slf4j;
  */
 @Slf4j
 @Component
-public class ModelServiceFactory {
+public class AiModelServiceFactory {
 
 	private final ObservationRegistry observationRegistry;
 
@@ -40,7 +40,7 @@ public class ModelServiceFactory {
 
 	private volatile EmbeddingModel embeddingModel;
 
-	public ModelServiceFactory(ObservationRegistry observationRegistry) {
+	public AiModelServiceFactory(ObservationRegistry observationRegistry) {
 		this.observationRegistry = observationRegistry;
 	}
 
@@ -63,7 +63,7 @@ public class ModelServiceFactory {
 	}
 
 	/** 按配置重建对应类型的实例并替换生效 */
-	public void refresh(ModelConfig config) {
+	public void refresh(AiModelConfig config) {
 		validate(config);
 		try {
 			switch (config.getModelType()) {
@@ -77,7 +77,7 @@ public class ModelServiceFactory {
 	}
 
 	/** 配置基本完整性校验:保存配置(服务)与刷新实例共用(服务与工厂同包) */
-	void validate(ModelConfig config) {
+	void validate(AiModelConfig config) {
 		if (config.getModelType() == null) {
 			throw new BusinessException(ErrorCode.INVALID_INPUT, "模型类型不能为空");
 		}
@@ -89,7 +89,7 @@ public class ModelServiceFactory {
 		}
 	}
 
-	private ChatClient buildChatClient(ModelConfig config) {
+	private ChatClient buildChatClient(AiModelConfig config) {
 		OpenAiChatOptions.Builder options = OpenAiChatOptions.builder().model(config.getModelName());
 		if (config.getTemperature() != null) {
 			options.temperature(config.getTemperature());
@@ -121,7 +121,7 @@ public class ModelServiceFactory {
 		return client;
 	}
 
-	private EmbeddingModel buildEmbeddingModel(ModelConfig config) {
+	private EmbeddingModel buildEmbeddingModel(AiModelConfig config) {
 		EmbeddingModel model = new OpenAiEmbeddingModel(buildApi(config), MetadataMode.EMBED,
 				OpenAiEmbeddingOptions.builder().model(config.getModelName()).build(),
 				RetryUtils.DEFAULT_RETRY_TEMPLATE, observationRegistry); // 5 参构造:挂上观测
@@ -130,7 +130,7 @@ public class ModelServiceFactory {
 	}
 
 	/** 统一走 OpenAI 兼容协议,apiKey 为空时传空串(兼容本地无鉴权部署) */
-	private OpenAiApi buildApi(ModelConfig config) {
+	private OpenAiApi buildApi(AiModelConfig config) {
 		String apiKey = StringUtils.hasText(config.getApiKey()) ? config.getApiKey() : "";
 		return OpenAiApi.builder().baseUrl(config.getBaseUrl()).apiKey(apiKey).build();
 	}

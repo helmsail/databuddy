@@ -1,6 +1,6 @@
 -- 系统库初始化脚本:启动幂等执行(建表 IF NOT EXISTS,可反复跑)
 -- 组织约定:表结构(DDL)统一放前面,初始化数据(种子 INSERT)统一放最后
--- 内容:节点提示词模板(node_prompt_template)、会话记忆(session_memory)、模型配置(model_config)
+-- 内容:节点提示词模板(node_prompt_template)、会话记忆(session_memory)、模型配置(ai_model_config)
 
 -- ============ 表结构 ============
 
@@ -32,7 +32,7 @@ CREATE TABLE IF NOT EXISTS session_memory (
 -- 模型配置:OpenAI 兼容协议;同时生效的 CHAT 与 EMBEDDING 各一个
 -- is_active:1 = 激活(NULL = 未激活);唯一索引 (model_type, is_active) 保证同类型至多一个激活(多 NULL 不冲突)
 -- 调优参数可空 = 用服务商默认,仅 CHAT 用(EMBEDDING 行留 NULL);"停用保留" = is_active 置 NULL,彻底不要 = 物理删除
-CREATE TABLE IF NOT EXISTS model_config (
+CREATE TABLE IF NOT EXISTS ai_model_config (
 	id                BIGINT AUTO_INCREMENT PRIMARY KEY,
 	model_type        VARCHAR(16)  NOT NULL,
 	model_name        VARCHAR(128) NOT NULL,

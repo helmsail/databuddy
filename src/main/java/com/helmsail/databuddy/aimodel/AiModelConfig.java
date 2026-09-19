@@ -1,21 +1,21 @@
-package com.helmsail.databuddy.model;
+package com.helmsail.databuddy.aimodel;
 
 import java.time.LocalDateTime;
 
 import lombok.Data;
 
 /**
- * AI 模型配置(OpenAI 兼容协议):model_config 表实体,同时是模型工厂的入参。
+ * AI 模型配置(OpenAI 兼容协议):ai_model_config 表实体,同时是模型工厂的入参。
  * 调优参数为空 = 用服务商默认值;is_active:1 = 激活,NULL = 未激活(同类型至多一个激活)
  */
 @Data
-public class ModelConfig {
+public class AiModelConfig {
 
 	/** 主键(新增时由数据库回填) */
 	private Long id;
 
 	/** 模型类型:CHAT / EMBEDDING(创建后不可改) */
-	private ModelType modelType;
+	private AiModelType modelType;
 
 	/** 模型名称(如 deepseek-chat) */
 	private String modelName;

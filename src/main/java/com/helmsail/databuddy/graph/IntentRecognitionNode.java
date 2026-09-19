@@ -12,8 +12,8 @@ import com.alibaba.cloud.ai.graph.OverAllState;
 import com.alibaba.cloud.ai.graph.action.AsyncNodeAction;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.helmsail.databuddy.aimodel.AiModelServiceFactory;
 import com.helmsail.databuddy.graph.util.NodeUtils;
-import com.helmsail.databuddy.model.ModelServiceFactory;
 import com.helmsail.databuddy.prompt.NodePromptTemplateMapper;
 
 /**
@@ -27,14 +27,14 @@ public class IntentRecognitionNode implements AsyncNodeAction {
 
 	private final NodePromptTemplateMapper promptMapper;
 
-	private final ModelServiceFactory modelServiceFactory;
+	private final AiModelServiceFactory aiModelServiceFactory;
 
 	private final ObjectMapper objectMapper;
 
-	public IntentRecognitionNode(NodePromptTemplateMapper promptMapper, ModelServiceFactory modelServiceFactory,
+	public IntentRecognitionNode(NodePromptTemplateMapper promptMapper, AiModelServiceFactory aiModelServiceFactory,
 			ObjectMapper objectMapper) {
 		this.promptMapper = promptMapper;
-		this.modelServiceFactory = modelServiceFactory;
+		this.aiModelServiceFactory = aiModelServiceFactory;
 		this.objectMapper = objectMapper;
 	}
 
@@ -45,7 +45,7 @@ public class IntentRecognitionNode implements AsyncNodeAction {
 		String history = state.value(GraphKeys.HISTORY, String.class).orElse("(无)");
 		String user = NodeUtils.renderPrompt(promptMapper, GraphKeys.INTENT_RECOGNITION,
 				Map.of("query", input, "history", history));
-		String output = modelServiceFactory.getChatClient()
+		String output = aiModelServiceFactory.getChatClient()
 			.prompt()
 			.user(user)
 			.call()
