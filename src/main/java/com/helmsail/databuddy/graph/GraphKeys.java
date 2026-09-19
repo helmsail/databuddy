@@ -30,6 +30,9 @@ public final class GraphKeys {
 	/** 查询增强节点(数据链第二节点) */
 	public static final String QUERY_ENHANCE = "query-enhance";
 
+	/** Schema 召回节点(数据链第三节点) */
+	public static final String SCHEMA_RECALL = "schema-recall";
+
 	// —— 状态键(OverAllState;随节点接入按需增补) ——
 
 	/** 本轮输入 */
@@ -55,6 +58,12 @@ public final class GraphKeys {
 
 	/** 扩展问法列表(供下游检索;回退时为空表) */
 	public static final String EXPANDED_QUERIES = "expanded_queries";
+
+	/** 召回的表结构文本(表块内容拼接;未命中为"无") */
+	public static final String SCHEMA = "schema";
+
+	/** 召回的表名列表(供下游与过程播报;未命中为空表) */
+	public static final String RECALLED_TABLES = "recalled_tables";
 
 	/** 节点过程状态:人类可读一句话,由 GraphService 转成 step 帧(不写则不播) */
 	public static final String NODE_STATUS = "node_status";
