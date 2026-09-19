@@ -40,6 +40,9 @@ public class AiModelServiceFactory {
 
 	private volatile EmbeddingModel embeddingModel;
 
+	/** 当前生效 EMBEDDING 模型名(写入向量 metadata,作为模型切换后的重建依据;未配置为 null) */
+	private volatile String embeddingModelName;
+
 	public AiModelServiceFactory(ObservationRegistry observationRegistry) {
 		this.observationRegistry = observationRegistry;
 	}
@@ -62,13 +65,21 @@ public class AiModelServiceFactory {
 		return current;
 	}
 
+	/** 当前生效 EMBEDDING 模型名;未配置返回 null(供观测与向量重建判断,自身不抛错) */
+	public String getEmbeddingModelName() {
+		return embeddingModelName;
+	}
+
 	/** 按配置重建对应类型的实例并替换生效 */
 	public void refresh(AiModelConfig config) {
 		validate(config);
 		try {
 			switch (config.getModelType()) {
 				case CHAT -> this.chatClient = buildChatClient(config);
-				case EMBEDDING -> this.embeddingModel = buildEmbeddingModel(config);
+				case EMBEDDING -> {
+					this.embeddingModel = buildEmbeddingModel(config);
+					this.embeddingModelName = config.getModelName();
+				}
 			}
 		}
 		catch (Exception e) {

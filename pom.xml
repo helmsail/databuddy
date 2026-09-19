@@ -64,6 +64,11 @@
 			<groupId>org.springframework.ai</groupId>
 			<artifactId>spring-ai-client-chat</artifactId>
 		</dependency>
+		<!-- 向量库抽象 + 内存实现(SimpleVectorStore):后续换真实向量库 = 换对应 starter + VectorStoreConfig 一个 bean -->
+		<dependency>
+			<groupId>org.springframework.ai</groupId>
+			<artifactId>spring-ai-vector-store</artifactId>
+		</dependency>
 
 		<!-- Spring AI Alibaba Graph:状态图工作流引擎(依赖 Spring AI 1.1.0,与本项目 1.1.2 兼容) -->
 		<dependency>
