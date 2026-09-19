@@ -64,9 +64,9 @@ public class ModelServiceFactory {
 
 	/** 按配置重建对应类型的实例并替换生效 */
 	public void refresh(ModelConfig config) {
-		check(config);
+		validate(config);
 		try {
-			switch (config.getType()) {
+			switch (config.getModelType()) {
 				case CHAT -> this.chatClient = buildChatClient(config);
 				case EMBEDDING -> this.embeddingModel = buildEmbeddingModel(config);
 			}
@@ -76,9 +76,9 @@ public class ModelServiceFactory {
 		}
 	}
 
-	/** 配置基本完整性校验 */
-	private void check(ModelConfig config) {
-		if (config.getType() == null) {
+	/** 配置基本完整性校验:保存配置(服务)与刷新实例共用(服务与工厂同包) */
+	void validate(ModelConfig config) {
+		if (config.getModelType() == null) {
 			throw new BusinessException(ErrorCode.INVALID_INPUT, "模型类型不能为空");
 		}
 		if (!StringUtils.hasText(config.getBaseUrl())) {
@@ -96,6 +96,18 @@ public class ModelServiceFactory {
 		}
 		if (config.getMaxTokens() != null) {
 			options.maxTokens(config.getMaxTokens());
+		}
+		if (config.getTopP() != null) {
+			options.topP(config.getTopP());
+		}
+		if (config.getFrequencyPenalty() != null) {
+			options.frequencyPenalty(config.getFrequencyPenalty());
+		}
+		if (config.getPresencePenalty() != null) {
+			options.presencePenalty(config.getPresencePenalty());
+		}
+		if (config.getSeed() != null) {
+			options.seed(config.getSeed());
 		}
 		ChatModel chatModel = OpenAiChatModel.builder()
 			.openAiApi(buildApi(config))

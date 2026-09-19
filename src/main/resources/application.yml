@@ -11,6 +11,10 @@ spring:
       encoding: UTF-8
       schema-locations: classpath:db/schema.sql
 
+mybatis: # 系统库 Mapper 的映射依赖:列名下划线 → 实体属性驼峰(MyBatis 核心默认关闭,显式打开)
+  configuration:
+    map-underscore-to-camel-case: true
+
 databuddy:
   storage:
     local-root-path: ./data/files

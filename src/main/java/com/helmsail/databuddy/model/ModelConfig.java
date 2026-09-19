@@ -1,17 +1,24 @@
 package com.helmsail.databuddy.model;
 
-import lombok.AllArgsConstructor;
+import java.time.LocalDateTime;
+
 import lombok.Data;
 
 /**
- * AI 模型配置(OpenAI 兼容协议)
+ * AI 模型配置(OpenAI 兼容协议):model_config 表实体,同时是模型工厂的入参。
+ * 调优参数为空 = 用服务商默认值;is_active:1 = 激活,NULL = 未激活(同类型至多一个激活)
  */
 @Data
-@AllArgsConstructor
 public class ModelConfig {
 
-	/** 模型类型 */
-	private ModelType type;
+	/** 主键(新增时由数据库回填) */
+	private Long id;
+
+	/** 模型类型:CHAT / EMBEDDING(创建后不可改) */
+	private ModelType modelType;
+
+	/** 模型名称(如 deepseek-chat) */
+	private String modelName;
 
 	/** 服务地址(如 https://api.deepseek.com) */
 	private String baseUrl;
@@ -19,13 +26,31 @@ public class ModelConfig {
 	/** API Key(可空,兼容本地无鉴权部署) */
 	private String apiKey;
 
-	/** 模型名称(如 deepseek-chat) */
-	private String modelName;
-
 	/** 采样温度(可空,仅对话模型使用,作为实例默认值) */
 	private Double temperature;
 
-	/** 最大生成 token 数(可空,仅对话模型使用,作为实例默认值) */
+	/** 最大生成 token 数(可空,同上) */
 	private Integer maxTokens;
+
+	/** 核采样阈值(可空,0~1;与温度同类旋钮,一般只调其一) */
+	private Double topP;
+
+	/** 频率惩罚(可空,压低复读:出现次数越多扣分越重) */
+	private Double frequencyPenalty;
+
+	/** 存在惩罚(可空,鼓励新话题) */
+	private Double presencePenalty;
+
+	/** 随机种子(可空,固定后输出尽量可复现) */
+	private Integer seed;
+
+	/** 激活标记:true = 激活;null = 未激活(不落 0) */
+	private Boolean isActive;
+
+	/** 创建时间 */
+	private LocalDateTime createTime;
+
+	/** 更新时间 */
+	private LocalDateTime updateTime;
 
 }
