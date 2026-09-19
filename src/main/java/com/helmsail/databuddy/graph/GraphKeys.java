@@ -27,6 +27,9 @@ public final class GraphKeys {
 	/** 知识召回节点(数据链首节点) */
 	public static final String KNOWLEDGE_RECALL = "knowledge-recall";
 
+	/** 查询增强节点(数据链第二节点) */
+	public static final String QUERY_ENHANCE = "query-enhance";
+
 	// —— 状态键(OverAllState;随节点接入按需增补) ——
 
 	/** 本轮输入 */
@@ -46,6 +49,12 @@ public final class GraphKeys {
 
 	/** 召回的业务知识文本(术语/问答/文档,带来源标注;无命中为"无") */
 	public static final String KNOWLEDGE = "knowledge";
+
+	/** 规范查询:业务翻译后的完整查询(指代消解、绝对时间、术语已解析;回退时为原问题) */
+	public static final String CANONICAL_QUERY = "canonical_query";
+
+	/** 扩展问法列表(供下游检索;回退时为空表) */
+	public static final String EXPANDED_QUERIES = "expanded_queries";
 
 	/** 节点过程状态:人类可读一句话,由 GraphService 转成 step 帧(不写则不播) */
 	public static final String NODE_STATUS = "node_status";

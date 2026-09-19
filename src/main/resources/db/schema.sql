@@ -225,3 +225,31 @@ SELECT 'knowledge-recall',
 1, 1
 FROM DUAL
 WHERE NOT EXISTS (SELECT 1 FROM node_prompt_template WHERE name = 'knowledge-recall');
+
+INSERT INTO node_prompt_template (name, content, version, enabled)
+SELECT 'query-enhance',
+'你是数据分析工作流的查询增强器:用【参考知识】把用户查询做业务翻译,产出"规范查询"和"扩展问法"。
+要求:
+1) 澄清收录:结合【对话历史】做指代消解,理解完整意图;
+2) 时间转换:识别"上个月"等相对时间,按【当前时间】换算为绝对日期或范围;
+3) 业务术语解析:以【参考知识】为准,把业务术语替换为数据语言的定义(例如"核心用户"→"最近30天内消费总额超过5000元的用户");知识里没有的定义不要臆造;
+4) 规范查询需独立、无歧义、时间明确、术语已解析;扩展问法给 2-3 条语义相同、表述不同的问法。
+
+【当前时间】
+{current_time}
+
+【参考知识】
+{knowledge}
+
+【对话历史】
+{history}
+
+【最新用户输入】
+{query}
+
+要求:仅输出 JSON,不要输出其他内容;canonical_query 为字符串,expanded_queries 为字符串数组。
+示例(当前时间 2026-09-19,知识:"核心用户"=最近30天内消费总额超过5000元的用户;输入"帮我看看上个月的核心用户有多少"):
+{"canonical_query": "查询上个月(2026-08-01至2026-08-31)期间,消费总额超过5000元的用户数量", "expanded_queries": ["统计2026年8月累计消费金额大于5000的客户总数", "上个月消费超过5000元的核心用户有多少人"]}',
+1, 1
+FROM DUAL
+WHERE NOT EXISTS (SELECT 1 FROM node_prompt_template WHERE name = 'query-enhance');

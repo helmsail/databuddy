@@ -17,6 +17,7 @@ import com.alibaba.cloud.ai.graph.checkpoint.BaseCheckpointSaver;
 import com.alibaba.cloud.ai.graph.checkpoint.config.SaverConfig;
 import com.alibaba.cloud.ai.graph.checkpoint.savers.mysql.MysqlSaver;
 import com.alibaba.cloud.ai.graph.exception.GraphStateException;
+import com.helmsail.databuddy.graph.enhance.QueryEnhanceNode;
 import com.helmsail.databuddy.graph.intent.IntentRecognitionDispatcher;
 import com.helmsail.databuddy.graph.intent.IntentRecognitionNode;
 import com.helmsail.databuddy.graph.knowledge.KnowledgeRecallNode;
@@ -27,7 +28,7 @@ import static com.alibaba.cloud.ai.graph.StateGraph.START;
 /**
  * 图装配(骨架版):拓扑、状态键策略、检查点——"怎么把图拼出来"都在这里;
  * 执行编排(跑图/事件/运行表/停止/释放)在 GraphService。
- * 当前拓扑:入口 → 意图识别 →(chat)终点 /(data_analysis)知识召回 → 终点(数据链后续节点接入时顺延)
+ * 当前拓扑:入口 → 意图识别 →(chat)终点 /(data_analysis)知识召回 → 查询增强 → 终点(数据链后续节点接入时顺延)
  */
 @Configuration
 public class GraphConfig {
@@ -40,7 +41,7 @@ public class GraphConfig {
 
 	@Bean
 	public CompiledGraph databuddyGraph(BaseCheckpointSaver checkpointSaver, IntentRecognitionNode intentRecognitionNode,
-			KnowledgeRecallNode knowledgeRecallNode) throws GraphStateException {
+			KnowledgeRecallNode knowledgeRecallNode, QueryEnhanceNode queryEnhanceNode) throws GraphStateException {
 		KeyStrategyFactory keyStrategyFactory = () -> Map.of(
 				GraphKeys.INPUT, KeyStrategy.REPLACE,
 				GraphKeys.AGENT_ID, KeyStrategy.REPLACE,
@@ -48,18 +49,22 @@ public class GraphConfig {
 				GraphKeys.FINAL_ANSWER, KeyStrategy.REPLACE,
 				GraphKeys.CLASSIFICATION, KeyStrategy.REPLACE,
 				GraphKeys.KNOWLEDGE, KeyStrategy.REPLACE,
+				GraphKeys.CANONICAL_QUERY, KeyStrategy.REPLACE,
+				GraphKeys.EXPANDED_QUERIES, KeyStrategy.REPLACE,
 				GraphKeys.NODE_STATUS, KeyStrategy.REPLACE);
 		return new StateGraph("databuddy", keyStrategyFactory)
 			// 拓扑:入口 → 意图识别 → 按分类分流(chat → 终点;data_analysis → 知识召回,数据链首节点)
 			.addNode(GraphKeys.INTENT_RECOGNITION, intentRecognitionNode)
 			.addNode(GraphKeys.KNOWLEDGE_RECALL, knowledgeRecallNode)
+			.addNode(GraphKeys.QUERY_ENHANCE, queryEnhanceNode)
 			.addEdge(START, GraphKeys.INTENT_RECOGNITION)
 			// 分流逻辑在 IntentRecognitionDispatcher(与节点同包);表声明可能去向(分流器直接返回目标,恒等映射)
 			.addConditionalEdges(GraphKeys.INTENT_RECOGNITION,
 					AsyncEdgeAction.edge_async(new IntentRecognitionDispatcher()),
 					Map.of(END, END, GraphKeys.KNOWLEDGE_RECALL, GraphKeys.KNOWLEDGE_RECALL))
-			// 知识召回暂直连终点:数据链下一节点接入时改指
-			.addEdge(GraphKeys.KNOWLEDGE_RECALL, END)
+			// 知识召回 → 查询增强(直连);查询增强暂直连终点:数据链下一节点(Schema 召回)接入时改指
+			.addEdge(GraphKeys.KNOWLEDGE_RECALL, GraphKeys.QUERY_ENHANCE)
+			.addEdge(GraphKeys.QUERY_ENHANCE, END)
 			.compile(CompileConfig.builder()
 				.saverConfig(SaverConfig.builder().register(checkpointSaver).build())
 				.build());
