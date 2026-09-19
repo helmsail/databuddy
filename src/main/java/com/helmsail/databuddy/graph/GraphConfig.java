@@ -12,6 +12,7 @@ import com.alibaba.cloud.ai.graph.CompiledGraph;
 import com.alibaba.cloud.ai.graph.KeyStrategy;
 import com.alibaba.cloud.ai.graph.KeyStrategyFactory;
 import com.alibaba.cloud.ai.graph.StateGraph;
+import com.alibaba.cloud.ai.graph.action.AsyncEdgeAction;
 import com.alibaba.cloud.ai.graph.checkpoint.BaseCheckpointSaver;
 import com.alibaba.cloud.ai.graph.checkpoint.config.SaverConfig;
 import com.alibaba.cloud.ai.graph.checkpoint.savers.mysql.MysqlSaver;
@@ -22,7 +23,7 @@ import static com.alibaba.cloud.ai.graph.StateGraph.START;
 
 /**
  * 图装配(骨架版):拓扑、状态键策略、检查点——"怎么把图拼出来"都在这里;
- * 执行编排(跑图/事件/运行表/停止/释放)在 GraphService;骨架期图无节点
+ * 执行编排(跑图/事件/运行表/停止/释放)在 GraphService;当前拓扑:入口 → 意图识别 → 终点
  */
 @Configuration
 public class GraphConfig {
@@ -34,13 +35,21 @@ public class GraphConfig {
 	}
 
 	@Bean
-	public CompiledGraph databuddyGraph(BaseCheckpointSaver checkpointSaver) throws GraphStateException {
+	public CompiledGraph databuddyGraph(BaseCheckpointSaver checkpointSaver, IntentRecognitionNode intentRecognitionNode)
+			throws GraphStateException {
 		KeyStrategyFactory keyStrategyFactory = () -> Map.of(
 				GraphKeys.INPUT, KeyStrategy.REPLACE,
 				GraphKeys.HISTORY, KeyStrategy.REPLACE,
-				GraphKeys.FINAL_ANSWER, KeyStrategy.REPLACE);
+				GraphKeys.FINAL_ANSWER, KeyStrategy.REPLACE,
+				GraphKeys.CLASSIFICATION, KeyStrategy.REPLACE);
 		return new StateGraph("databuddy", keyStrategyFactory)
-			.addEdge(START, END) // 骨架:无节点,入口直达终点;节点接入后替换为 START → 首节点 → … → END
+			// 拓扑:入口 → 意图识别 → 按分类分流(chat 与 data_analysis 当前都到终点;数据链接入后,后者改指其首节点)
+			.addNode(GraphKeys.INTENT_RECOGNITION, intentRecognitionNode)
+			.addEdge(START, GraphKeys.INTENT_RECOGNITION)
+			.addConditionalEdges(GraphKeys.INTENT_RECOGNITION,
+					AsyncEdgeAction.edge_async(
+							state -> state.value(GraphKeys.CLASSIFICATION, String.class).orElse(GraphKeys.INTENT_CHAT)),
+					Map.of(GraphKeys.INTENT_CHAT, END, GraphKeys.INTENT_DATA_ANALYSIS, END))
 			.compile(CompileConfig.builder()
 				.saverConfig(SaverConfig.builder().register(checkpointSaver).build())
 				.build());

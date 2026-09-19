@@ -86,7 +86,7 @@ public class GraphService {
 				run.setFinalAnswer(answer);
 			}
 		}
-		// 骨架期无节点,没有文本帧;节点(流式)接入后在这里把片段转成事件推给前端
+		// 非流式节点不出片段帧;将来流式节点接入后,在这里把片段转成事件推给前端
 	}
 
 	private void onComplete(GraphRun run) {

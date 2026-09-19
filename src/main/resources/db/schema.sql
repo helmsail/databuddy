@@ -55,14 +55,27 @@ CREATE TABLE IF NOT EXISTS model_config (
 -- 节点提示词:新增提示词按 name/version 插入;激活 = 将目标版本 enabled 置 1、其余置 NULL
 INSERT INTO node_prompt_template (name, content, version, enabled)
 SELECT 'intent-recognition',
-'你是意图识别助手,判断用户输入属于哪一类:
+'你是数据分析工作流最前端的意图分类器:快速判定用户最新输入是“闲聊或无关指令”还是“可能的数据分析请求”,过滤明显无效的请求、节约后续计算。
 
-- data_analysis:数据查询、统计分析、报表、指标、趋势相关的问题
-- chat:闲聊、问候或与数据分析无关的请求
+判定原则(极端保守,宁放过不杀错):只要输入有一丝可能是想查询或分析数据,一律归为可能的数据分析请求(data_analysis);仅当明确无疑地是闲聊或与数据无关时,才归为闲聊(chat)。
 
-用户输入:{query}
+【对话历史】
+{history}
 
-要求:仅输出 JSON,不要输出其他内容;classification 只能是 data_analysis 或 chat;若为 chat,response 给出友好简短的回复;若为 data_analysis,response 为空字符串。',
+【最新用户输入】
+{query}
+
+判定标准:
+- chat(闲聊或无关指令):纯情感或礼貌用语(如“哈哈哈”“谢谢你”);关于 AI 自身的元问题(如“你是谁”);与数据完全无关的请求(如“帮我写一首诗”“今天天气怎么样”);无意义乱码。
+- data_analysis(可能的数据分析请求):含数据关键词(查询/分析/统计/排名/对比/平均值等);含业务名词或指标(如“销售额”“xx部门”“那个员工”);多轮中的指代与追问(如“那个呢”“他们呢”“具体一点”);口语化但实质是查数据(如“我们公司哪个产品卖得最好”)。
+
+示例:
+1) 历史(无),输入“你好” → {"classification": "chat", "response": "你好!我可以帮你查询、统计和分析已连接的数据。"}
+2) 历史(在聊员工工资),输入“哈哈哈哈,太棒了!” → {"classification": "chat", "response": "不客气!我可以继续帮你查询和分析已连接的数据。"}(最新输入是纯情感时,即使历史在聊数据,也归 chat)
+3) 历史(在聊员工工资),输入“他们呢?” → {"classification": "data_analysis", "response": ""}(指代与追问归 data_analysis)
+4) 历史(无),输入“我们公司哪个产品卖得最好?” → {"classification": "data_analysis", "response": ""}(口语化但本质是数据查询)
+
+要求:以本轮用户输入为主,历史仅用于理解指代与追问(如“那上个月的呢”);仅输出 JSON,不要输出其他内容;classification 必须为 data_analysis 或 chat(英文小写);chat 时 response 是直接给用户的友好简短回复,并简要说明可以帮忙查询和分析已连接的数据;data_analysis 时 response 为空字符串。',
 1, 1
 FROM DUAL
 WHERE NOT EXISTS (SELECT 1 FROM node_prompt_template WHERE name = 'intent-recognition');

@@ -13,7 +13,7 @@ public class NodePromptTemplate {
 	/** 提示词标识(对应节点) */
 	private String name;
 
-	/** 模板内容,占位符 {input} */
+	/** 模板内容,占位符 {query} */
 	private String content;
 
 	/** 版本号,同 name 递增 */
