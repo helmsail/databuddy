@@ -1,6 +1,6 @@
 -- 系统库初始化脚本:启动幂等执行(建表 IF NOT EXISTS,可反复跑)
 -- 组织约定:表结构(DDL)统一放前面,初始化数据(种子 INSERT)统一放最后
--- 内容:节点提示词模板(node_prompt_template)、会话记忆(session_memory)、模型配置(ai_model_config)、业务库配置(biz_database_config)与表级关联(biz_table_relation)、智能体(agent)与表绑定(agent_biz_table)
+-- 内容:节点提示词模板(node_prompt_template)、会话记忆(session_memory)、模型配置(ai_model_config)、业务库配置(biz_database_config)与表级关联(biz_table_relation)、智能体(agent)与表绑定(agent_biz_table)、业务术语(agent_biz_term)
 
 -- ============ 表结构 ============
 
@@ -101,6 +101,22 @@ CREATE TABLE IF NOT EXISTS agent_biz_table (
 	create_time        DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 	update_time        DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
 	UNIQUE (agent_id, database_config_id, table_name),
+	INDEX idx_agent_status (agent_id, embedding_status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- agent 业务术语:一行 = 一个术语;向量化内容 = 术语 + 释义,单条同步(CRUD 即触发)
+-- synonyms:同义词/别名,英文逗号分隔(如:成交额,销售额);embedding_status:PENDING / SYNCED / FAILED;error_msg 存最近一次失败原因
+CREATE TABLE IF NOT EXISTS agent_biz_term (
+	id               BIGINT AUTO_INCREMENT PRIMARY KEY,
+	agent_id         BIGINT        NOT NULL,
+	business_term    VARCHAR(128)  NOT NULL,
+	synonyms         VARCHAR(512)  NULL,
+	description      VARCHAR(1024) NULL,
+	embedding_status VARCHAR(16)   NOT NULL DEFAULT 'PENDING',
+	error_msg        VARCHAR(512)  NULL,
+	create_time      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	update_time      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+	UNIQUE (agent_id, business_term),
 	INDEX idx_agent_status (agent_id, embedding_status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
