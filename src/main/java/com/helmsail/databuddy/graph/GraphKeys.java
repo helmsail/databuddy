@@ -36,6 +36,9 @@ public final class GraphKeys {
 	/** 表关系节点(数据链第四节点) */
 	public static final String TABLE_RELATION = "table-relation";
 
+	/** 可行性评估节点(数据链第五节点) */
+	public static final String FEASIBILITY_ASSESSMENT = "feasibility-assessment";
+
 	// —— 状态键(OverAllState;随节点接入按需增补) ——
 
 	/** 本轮输入 */

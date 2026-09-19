@@ -253,3 +253,33 @@ SELECT 'query-enhance',
 1, 1
 FROM DUAL
 WHERE NOT EXISTS (SELECT 1 FROM node_prompt_template WHERE name = 'query-enhance');
+
+INSERT INTO node_prompt_template (name, content, version, enabled)
+SELECT 'feasibility-assessment',
+'你是数据分析工作流的可行性评估器:拿到【规范查询】【表结构】【表关系】【参考知识】【对话历史】后,判断"用现有材料能否完成这个分析",产出判定结果;需要澄清时,给出一个简洁、聚焦的反问。
+判定要求:
+1) 倾向乐观包容:只要核心概念能在【表结构】中找到对应,或借助【参考知识】能映射到表结构的字段与条件(如"核心用户"→"消费总额超过5000元的用户"),就判为可分析(data_analysis);
+2) 仅当核心实体或指标在【表结构】与【参考知识】中都找不到任何对应,或决定性概念(如"最受欢迎")非常模糊且【参考知识】未给出定义时,才判为需要澄清(need_clarification);
+3) 判定只针对"材料够不够",不要重写或扩写需求本身。
+
+【参考知识】
+{knowledge}
+
+【表结构】
+{schema}
+
+【表关系】
+{relations}
+
+【对话历史】
+{history}
+
+【规范查询】
+{canonical_query}
+
+要求:仅输出 JSON,不要输出其他内容;requirement_type 必须为 data_analysis 或 need_clarification(英文小写);need_clarification 时 clarification 为反问内容,data_analysis 时 clarification 为空字符串。
+示例一(知识可映射):规范查询"查询所有核心用户的数量",【表结构】有 user、orders 表,【参考知识】:"核心用户"=最近30天内消费总额超过5000元的用户 → {"requirement_type": "data_analysis", "clarification": ""}
+示例二(概念完全缺失):规范查询"统计所有部门的总毛利",【表结构】与【参考知识】均无毛利相关字段或定义 → {"requirement_type": "need_clarification", "clarification": "当前数据中没有与毛利相关的字段,请问毛利如何定义,或您想改看哪些已有指标?"}',
+1, 1
+FROM DUAL
+WHERE NOT EXISTS (SELECT 1 FROM node_prompt_template WHERE name = 'feasibility-assessment');
