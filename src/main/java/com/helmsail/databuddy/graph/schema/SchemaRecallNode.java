@@ -5,8 +5,6 @@ import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 import io.micrometer.observation.annotation.Observed;
 
@@ -17,6 +15,7 @@ import com.alibaba.cloud.ai.graph.action.AsyncNodeAction;
 import com.helmsail.databuddy.agent.AgentService;
 import com.helmsail.databuddy.agent.RetrievedChunk;
 import com.helmsail.databuddy.graph.GraphKeys;
+import com.helmsail.databuddy.graph.util.NodeUtils;
 import com.helmsail.databuddy.vectorize.IndexSourceType;
 
 import lombok.extern.slf4j.Slf4j;
@@ -31,11 +30,8 @@ import lombok.extern.slf4j.Slf4j;
 @Component
 public class SchemaRecallNode implements AsyncNodeAction {
 
-	/** 召回条数上限(整表一块,即最多召回的表的张数) */
-	private static final int TOP_K = 5;
-
-	/** 表块内容首行约定:"表: 表名(注释)"——与 AgentBizTableService#buildContent 对齐 */
-	private static final Pattern TABLE_HEAD = Pattern.compile("^\\s*表:\\s*([^\\s(（]+)");
+	/** 召回条数上限(整表一块,即最多召回的表的张数;偏宁多勿漏,关系补拉再兜底) */
+	private static final int TOP_K = 8;
 
 	/** 表块来源(知识源归知识召回,表块归本节点) */
 	private static final EnumSet<IndexSourceType> TABLE_SOURCE = EnumSet.of(IndexSourceType.BIZ_TABLE);
@@ -49,7 +45,7 @@ public class SchemaRecallNode implements AsyncNodeAction {
 	public SchemaRecallNode(AgentService agentService) {
 		this.agentService = agentService;
 	}
-
+    
 	@Override
 	@Observed(name = "node.schemaRecall", contextualName = "Schema 召回")
 	public CompletableFuture<Map<String, Object>> apply(OverAllState state) {
@@ -77,13 +73,13 @@ public class SchemaRecallNode implements AsyncNodeAction {
 		return schema.toString().trim();
 	}
 
-	/** 从内容首行解析表名(格式自控;解析不到只是少个名字,流程判断用块数,不受影响) */
+	/** 解析表名(约定在 NodeUtils.parseTableName;解析不到只是少个名字,流程判断用块数,不受影响) */
 	private List<String> names(List<RetrievedChunk> tables) {
 		List<String> names = new ArrayList<>(tables.size());
 		for (RetrievedChunk table : tables) {
-			Matcher matcher = TABLE_HEAD.matcher(table.content());
-			if (matcher.find()) {
-				names.add(matcher.group(1));
+			String name = NodeUtils.parseTableName(table.content());
+			if (name != null) {
+				names.add(name);
 			}
 		}
 		return names;

@@ -12,14 +12,17 @@ import com.helmsail.databuddy.prompt.NodePromptTemplateMapper;
 import lombok.extern.slf4j.Slf4j;
 
 /**
- * 节点公共随身工具:每个节点与 LLM 打交道都要做的两件事——
- * 提示词装载渲染(renderPrompt)、模型输出的 JSON 解析(parseJson)
+ * 节点公共随身工具:提示词装载渲染(renderPrompt)、模型输出 JSON 解析(parseJson)、
+ * 表块名解析(parseTableName,表块内容首行约定)
  */
 @Slf4j
 public final class NodeUtils {
 
 	/** 模型可能把 JSON 包进 ```json 围栏,解析前先剥掉 */
 	private static final Pattern FENCE = Pattern.compile("```(?:json)?\\s*([\\s\\S]*?)\\s*```");
+
+	/** 表块内容首行约定:"表: 表名(注释)"——与 AgentBizTableService#buildContent 对齐 */
+	private static final Pattern TABLE_HEAD = Pattern.compile("^\\s*表:\\s*([^\\s(（]+)");
 
 	private NodeUtils() {
 	}
@@ -57,6 +60,12 @@ public final class NodeUtils {
 	public static String brief(String text) {
 		String trimmed = text == null ? "" : text.trim();
 		return trimmed.length() <= 200 ? trimmed : trimmed.substring(0, 200) + "...";
+	}
+
+	/** 从表块内容解析表名(首行约定;解析不到返回 null) */
+	public static String parseTableName(String content) {
+		Matcher matcher = TABLE_HEAD.matcher(content == null ? "" : content);
+		return matcher.find() ? matcher.group(1) : null;
 	}
 
 	/** 剥掉可能存在的 ```json 代码围栏 */

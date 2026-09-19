@@ -33,6 +33,9 @@ public final class GraphKeys {
 	/** Schema 召回节点(数据链第三节点) */
 	public static final String SCHEMA_RECALL = "schema-recall";
 
+	/** 表关系节点(数据链第四节点) */
+	public static final String TABLE_RELATION = "table-relation";
+
 	// —— 状态键(OverAllState;随节点接入按需增补) ——
 
 	/** 本轮输入 */
@@ -62,8 +65,11 @@ public final class GraphKeys {
 	/** 召回的表结构文本(表块内容拼接;未命中为"无") */
 	public static final String SCHEMA = "schema";
 
-	/** 召回的表名列表(供下游与过程播报;未命中为空表) */
+	/** 召回的表名列表(表关系补拉后为最终可用表集;未命中为空表) */
 	public static final String RECALLED_TABLES = "recalled_tables";
+
+	/** 表关系清单文本(join 条件,每行一条;无关系为"无") */
+	public static final String TABLE_RELATIONS = "table_relations";
 
 	/** 节点过程状态:人类可读一句话,由 GraphService 转成 step 帧(不写则不播) */
 	public static final String NODE_STATUS = "node_status";

@@ -4,6 +4,8 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 import org.springframework.ai.document.Document;
 import org.springframework.stereotype.Service;
@@ -18,6 +20,8 @@ import com.helmsail.databuddy.agent.biztable.AgentBizTable;
 import com.helmsail.databuddy.agent.biztable.AgentBizTableService;
 import com.helmsail.databuddy.agent.bizterm.AgentBizTerm;
 import com.helmsail.databuddy.agent.bizterm.AgentBizTermService;
+import com.helmsail.databuddy.bizdatabase.BizDatabaseService;
+import com.helmsail.databuddy.bizdatabase.BizTableRelation;
 import com.helmsail.databuddy.exception.BusinessException;
 import com.helmsail.databuddy.exception.ErrorCode;
 import com.helmsail.databuddy.session.SessionService;
@@ -50,9 +54,12 @@ public class AgentService {
 
 	private final VectorService vectorService;
 
+	private final BizDatabaseService bizDatabaseService;
+
 	public AgentService(AgentMapper agentMapper, AgentBizTableService agentBizTableService,
 			AgentBizTermService agentBizTermService, AgentBizQaService agentBizQaService,
-			AgentBizDocumentService agentBizDocumentService, SessionService sessionService, VectorService vectorService) {
+			AgentBizDocumentService agentBizDocumentService, SessionService sessionService, VectorService vectorService,
+			BizDatabaseService bizDatabaseService) {
 		this.agentMapper = agentMapper;
 		this.agentBizTableService = agentBizTableService;
 		this.agentBizTermService = agentBizTermService;
@@ -60,6 +67,7 @@ public class AgentService {
 		this.agentBizDocumentService = agentBizDocumentService;
 		this.sessionService = sessionService;
 		this.vectorService = vectorService;
+		this.bizDatabaseService = bizDatabaseService;
 	}
 
 	/** 全部智能体(新加的在前) */
@@ -134,6 +142,32 @@ public class AgentService {
 					extra(sourceType, sourceId)));
 		}
 		return chunks;
+	}
+
+	/**
+	 * 取与指定表集相关的表关系:按 agent_biz_table 行定位这些表所属的业务库 → 逐库取关系 →
+	 * 只保留"源表或目标表命中给定表集"的行;供表关系节点做 join 补齐(零 LLM)
+	 */
+	public List<BizTableRelation> relationsOf(long agentId, Collection<String> tableNames) {
+		if (tableNames == null || tableNames.isEmpty()) {
+			return List.of();
+		}
+		Set<String> names = Set.copyOf(tableNames);
+		Set<Long> configIds = agentBizTableService.list(agentId)
+			.stream()
+			.filter(row -> names.contains(row.getTableName()))
+			.map(AgentBizTable::getDatabaseConfigId)
+			.collect(Collectors.toSet());
+		List<BizTableRelation> relations = new ArrayList<>();
+		for (Long configId : configIds) {
+			for (BizTableRelation relation : bizDatabaseService.listRelations(configId)) {
+				if (names.contains(relation.getSourceTableName()) || names.contains(relation.getTargetTableName())) {
+					relations.add(relation);
+				}
+			}
+		}
+		log.info("表关系查询: agent={}, 表集 {} 张, 命中关系 {} 条", agentId, names.size(), relations.size());
+		return relations;
 	}
 
 	/** 回源补齐:按来源取本行"不在向量里"的字段(QA 答案 / 术语同义词 / 文档名);行已删则空表 */
