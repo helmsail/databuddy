@@ -1,6 +1,6 @@
 -- 系统库初始化脚本:启动幂等执行(建表 IF NOT EXISTS,可反复跑)
 -- 组织约定:表结构(DDL)统一放前面,初始化数据(种子 INSERT)统一放最后
--- 内容:节点提示词模板(node_prompt_template)、会话记忆(session_memory)、模型配置(ai_model_config)、业务库配置(biz_database_config)与表级关联(biz_table_relation)、智能体(agent)与表绑定(agent_biz_table)、业务术语(agent_biz_term)、业务问答(agent_biz_qa)
+-- 内容:节点提示词模板(node_prompt_template)、会话记忆(session_memory)、模型配置(ai_model_config)、业务库配置(biz_database_config)与表级关联(biz_table_relation)、智能体(agent)与表绑定(agent_biz_table)、业务术语(agent_biz_term)、业务问答(agent_biz_qa)、业务文档(agent_biz_document)
 
 -- ============ 表结构 ============
 
@@ -132,6 +132,26 @@ CREATE TABLE IF NOT EXISTS agent_biz_qa (
 	create_time      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 	update_time      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
 	UNIQUE (agent_id, question),
+	INDEX idx_agent_status (agent_id, embedding_status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- agent 业务文档:一行 = 一份文档;文件本体在 storage 包(本地存储),文本按 splitter_type 切分向量化
+-- 文本获取:markdown 直读保结构,其余格式经 Tika 提取(自动编码识别 / 去 HTML 标签)
+-- 上传异步处理(落行 PENDING → worker 后台切分入向量,失败进兜底重试);扩展名白名单:文本类 + pdf/word/excel/ppt 等常见格式,其余上传即拒
+-- storage_type:存储分发键(当前 LOCAL);UNIQUE (agent_id, name):同 agent 下文档名唯一(文件按 agent 目录 + 文件名落盘)
+-- splitter_type:切分策略(WHOLE / PARAGRAPH / MARKDOWN / TOKEN);embedding_status:PENDING / SYNCED / FAILED
+CREATE TABLE IF NOT EXISTS agent_biz_document (
+	id               BIGINT AUTO_INCREMENT PRIMARY KEY,
+	agent_id         BIGINT       NOT NULL,
+	name             VARCHAR(256) NOT NULL,
+	storage_type     VARCHAR(16)  NOT NULL DEFAULT 'LOCAL',
+	storage_path     VARCHAR(512) NOT NULL,
+	splitter_type    VARCHAR(16)  NOT NULL DEFAULT 'PARAGRAPH',
+	embedding_status VARCHAR(16)  NOT NULL DEFAULT 'PENDING',
+	error_msg        VARCHAR(512) NULL,
+	create_time      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	update_time      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+	UNIQUE (agent_id, name),
 	INDEX idx_agent_status (agent_id, embedding_status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 

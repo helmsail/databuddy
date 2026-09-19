@@ -70,6 +70,12 @@
 			<artifactId>spring-ai-vector-store</artifactId>
 		</dependency>
 
+		<!-- 文档文本提取:pdf/word/excel/ppt/html 等经 Tika 抽文本(markdown 由服务直读,不走此模块) -->
+		<dependency>
+			<groupId>org.springframework.ai</groupId>
+			<artifactId>spring-ai-tika-document-reader</artifactId>
+		</dependency>
+
 		<!-- Spring AI Alibaba Graph:状态图工作流引擎(依赖 Spring AI 1.1.0,与本项目 1.1.2 兼容) -->
 		<dependency>
 			<groupId>com.alibaba.cloud.ai</groupId>
