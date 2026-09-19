@@ -1,6 +1,6 @@
 -- 系统库初始化脚本:启动幂等执行(建表 IF NOT EXISTS,可反复跑)
 -- 组织约定:表结构(DDL)统一放前面,初始化数据(种子 INSERT)统一放最后
--- 内容:节点提示词模板(node_prompt_template)、会话记忆(session_memory)、模型配置(ai_model_config)、业务库配置(biz_database_config)与表级关联(biz_table_relation)
+-- 内容:节点提示词模板(node_prompt_template)、会话记忆(session_memory)、模型配置(ai_model_config)、业务库配置(biz_database_config)与表级关联(biz_table_relation)、智能体(agent)
 
 -- ============ 表结构 ============
 
@@ -78,6 +78,15 @@ CREATE TABLE IF NOT EXISTS biz_table_relation (
 	create_time        DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 	update_time        DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
 	INDEX idx_database (database_config_id, source_table_name)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- 智能体:身份/注册表(一行 = 一个智能体);模型、业务库、提示词等绑定关系后续按需接入,不预埋字段
+CREATE TABLE IF NOT EXISTS agent (
+	id          BIGINT AUTO_INCREMENT PRIMARY KEY,
+	name        VARCHAR(128) NOT NULL,
+	description VARCHAR(256) NULL,
+	create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ============ 初始化数据(种子) ============
