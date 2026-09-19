@@ -1,6 +1,6 @@
 -- 系统库初始化脚本:启动幂等执行(建表 IF NOT EXISTS,可反复跑)
 -- 组织约定:表结构(DDL)统一放前面,初始化数据(种子 INSERT)统一放最后
--- 内容:节点提示词模板(node_prompt_template)、会话记忆(session_memory)、模型配置(ai_model_config)、业务库配置(biz_database_config)与表级关联(biz_table_relation)、智能体(agent)
+-- 内容:节点提示词模板(node_prompt_template)、会话记忆(session_memory)、模型配置(ai_model_config)、业务库配置(biz_database_config)与表级关联(biz_table_relation)、智能体(agent)与表绑定(agent_biz_table)
 
 -- ============ 表结构 ============
 
@@ -87,6 +87,21 @@ CREATE TABLE IF NOT EXISTS agent (
 	description VARCHAR(256) NULL,
 	create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 	update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- agent 表绑定:一行 = agent 绑定的一张业务表;向量化粒度整表一块(表名 + 表注释 + 列注释,批量整体同步)
+-- embedding_status:PENDING 待向量化 / SYNCED 已同步 / FAILED 失败待重试(agent_biz_* 同值域);error_msg 存最近一次失败原因
+CREATE TABLE IF NOT EXISTS agent_biz_table (
+	id                 BIGINT AUTO_INCREMENT PRIMARY KEY,
+	agent_id           BIGINT       NOT NULL,
+	database_config_id BIGINT       NOT NULL,
+	table_name         VARCHAR(128) NOT NULL,
+	embedding_status   VARCHAR(16)  NOT NULL DEFAULT 'PENDING',
+	error_msg          VARCHAR(512) NULL,
+	create_time        DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	update_time        DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+	UNIQUE (agent_id, database_config_id, table_name),
+	INDEX idx_agent_status (agent_id, embedding_status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ============ 初始化数据(种子) ============
