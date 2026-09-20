@@ -61,7 +61,7 @@ public class PythonExecuteNode implements AsyncNodeAction {
 		if (!success) {
 			return CompletableFuture.completedFuture(fail(state, failureReason(result)));
 		}
-		int step = state.value(GraphKeys.PLAN_STEP, 1);
+		int step = NodeUtils.intOf(state, GraphKeys.PLAN_STEP, 1);
 		String stdout = result.stdout() == null ? "" : result.stdout();
 		Map<String, String> results = PlanUtils.withEntry(stepResults(state), "step_" + step, stdout);
 		String files = filesText(result);
@@ -73,10 +73,10 @@ public class PythonExecuteNode implements AsyncNodeAction {
 
 	/** 失败:未超限打回生成(带原因);超限升级重规划,再超限终止语收场 */
 	private Map<String, Object> fail(OverAllState state, String reason) {
-		int attempt = state.value(GraphKeys.PYTHON_ATTEMPT, 0);
+		int attempt = NodeUtils.intOf(state, GraphKeys.PYTHON_ATTEMPT, 0);
 		log.warn("Python 执行失败(第 {} 次尝试): {}", attempt, reason);
 		if (attempt >= MAX_PYTHON_ATTEMPT) {
-			int count = state.value(GraphKeys.PLAN_REPAIR_COUNT, 0) + 1;
+			int count = NodeUtils.intOf(state, GraphKeys.PLAN_REPAIR_COUNT, 0) + 1;
 			if (count > PlanUtils.MAX_PLAN_REPAIR) {
 				return Map.of(GraphKeys.PYTHON_FAILED, true, GraphKeys.PYTHON_FAIL_REASON, reason, GraphKeys.PYTHON_NEXT,
 						"end", GraphKeys.FINAL_ANSWER, TERMINATION, GraphKeys.NODE_STATUS, "Python 组重试超限且重规划超限:终止");

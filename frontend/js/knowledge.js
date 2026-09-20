@@ -15,6 +15,9 @@ async function mountKnowledge(view) {
         <h1>智能体知识库</h1>
         <p>${esc(agent.name)} · 维护专属知识资源(数据表 / 文档 / 术语 / 问答),支持向量召回</p>
       </div>
+      <div class="page-actions">
+        <button class="btn secondary" id="kb-rebuild" title="内存向量库重启后会清空:点此把四类知识全部重新向量化">重建全部向量</button>
+      </div>
     </div>
     <div class="tabbar" id="kb-tabs">
       <button data-tab="tables" class="active">数据表</button>
@@ -31,6 +34,23 @@ async function mountKnowledge(view) {
       renderKbTab(btn.dataset.tab);
     };
   });
+  $('#kb-rebuild').onclick = () =>
+    confirmBox({
+      title: '重建全部向量',
+      message: '把该智能体的表 / 术语 / 问答 / 文档全部重新向量化(内存向量库重启丢失后的恢复入口)。确认执行?',
+      confirmText: '开始重建',
+      onConfirm: async () => {
+        try {
+          toast('重建中,请稍候…');
+          await api('POST', `/agent/${agent.id}/knowledge/rebuild`);
+          toast('全部向量重建完成');
+          const active = $('#kb-tabs button.active');
+          renderKbTab(active ? active.dataset.tab : 'tables');
+        } catch (e) {
+          toast(e.message, true);
+        }
+      },
+    });
   renderKbTab('tables');
 
   window.__pageCleanup = null;

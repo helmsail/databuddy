@@ -150,6 +150,15 @@ public class AgentBizDocumentService {
 		log.info("文档删除: agent={}, name={} (#{})", old.getAgentId(), old.getName(), id);
 	}
 
+	/** 全量重建:全部文档逐篇向量化(重启后内存向量库丢失的恢复入口;失败行落 FAILED 待重试) */
+	public void rebuildAll(long agentId) {
+		List<AgentBizDocument> rows = mapper.selectByAgent(agentId);
+		for (AgentBizDocument row : rows) {
+			syncRow(row);
+		}
+		log.info("文档全量重建完成: agent={}, 共 {} 篇", agentId, rows.size());
+	}
+
 	/** 增量重试:仅处理未同步行(PENDING / FAILED);手动重试与定时兜底共用,幂等可反复调 */
 	public void retryUnsynced(long agentId) {
 		List<AgentBizDocument> rows = mapper.selectByAgent(agentId).stream()
@@ -240,9 +249,9 @@ public class AgentBizDocumentService {
 					document.getId());
 		}
 		catch (Exception e) {
-			log.warn("文档向量化失败: agent={}, name={}, 原因={}", document.getAgentId(), document.getName(),
-					e.getMessage());
-			mapper.updateSyncStatus(document.getId(), EmbeddingStatus.FAILED, truncate(e.getMessage()));
+			String reason = e.getClass().getSimpleName() + (e.getMessage() == null ? "" : ": " + e.getMessage());
+			log.warn("文档向量化失败: agent={}, name={}", document.getAgentId(), document.getName(), e);
+			mapper.updateSyncStatus(document.getId(), EmbeddingStatus.FAILED, truncate(reason));
 		}
 	}
 

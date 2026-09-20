@@ -63,7 +63,7 @@ public class McpServerService {
 			@JsonPropertyDescription("智能体 ID(数字字符串);可先调用 list_agents 工具获取") String agentId) {
 	}
 
-	@Tool(description = "查询可用智能体列表(含 ID、名称与描述)。调用 nl2sql 或 query_data 前可先用本工具确定 agentId。")
+	@Tool(name = "list_agents", description = "查询可用智能体列表(含 ID、名称与描述)。调用 nl2sql 或 query_data 前可先用本工具确定 agentId。")
 	public String listAgents() {
 		return guard(() -> {
 			List<Map<String, Object>> agents = agentService.list().stream().map(this::brief).toList();
@@ -76,9 +76,10 @@ public class McpServerService {
 		});
 	}
 
-	@Tool(description = "将自然语言问题转换为 SQL 语句:只生成并校验 SQL 并返回 SQL 文本,不返回数据。需要查询结果数据本身时请改用 query_data。")
+	@Tool(name = "nl2sql", description = "将自然语言问题转换为 SQL 语句:只生成并校验 SQL 并返回 SQL 文本,不返回数据。需要查询结果数据本身时请改用 query_data。")
 	public String nl2sql(Nl2SqlRequest request) {
 		return guard(() -> {
+			requireRequest(request);
 			OverAllState state = graphService.runLight(requireAgentId(request.agentId()),
 					requireQuestion(request.naturalQuery()));
 			String sql = state.value(GraphKeys.SQL_QUERY, String.class).orElse("");
@@ -86,9 +87,10 @@ public class McpServerService {
 		});
 	}
 
-	@Tool(description = "回答数据问题:自动完成取数分析并返回查询结果数据(含 SQL、列名、前 50 行数据与总行数)。适合需要具体数值、排名、对比的问题。")
+	@Tool(name = "query_data", description = "回答数据问题:自动完成取数分析并返回查询结果数据(含 SQL、列名、前 50 行数据与总行数)。适合需要具体数值、排名、对比的问题。")
 	public String queryData(QueryDataRequest request) {
 		return guard(() -> {
+			requireRequest(request);
 			OverAllState state = graphService.runLight(requireAgentId(request.agentId()),
 					requireQuestion(request.naturalQuery()));
 			String resultJson = state.value(GraphKeys.SQL_RESULT, String.class).orElse("");
@@ -148,6 +150,13 @@ public class McpServerService {
 		brief.put("name", agent.getName());
 		brief.put("description", agent.getDescription() == null ? "" : agent.getDescription());
 		return brief;
+	}
+
+	/** 参数对象校验:SDK 对缺失参数注入 null(调用方未按 inputSchema 嵌套传 request),给出可读错误 */
+	private void requireRequest(Object request) {
+		if (request == null) {
+			throw new BusinessException(ErrorCode.INVALID_INPUT, "参数缺失: 请按工具 inputSchema 传入 request 对象(naturalQuery 与 agentId)");
+		}
 	}
 
 	/** 参数校验:agentId 必填且为数字 */

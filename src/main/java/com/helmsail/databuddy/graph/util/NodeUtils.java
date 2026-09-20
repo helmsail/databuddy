@@ -2,6 +2,7 @@ package com.helmsail.databuddy.graph.util;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -71,6 +72,54 @@ public final class NodeUtils {
 			return list.stream().map(String::valueOf).toList();
 		}
 		return List.of();
+	}
+
+	/**
+	 * 读状态里的 long:检查点往返后形态多变(纯数字 / 单元素或类型封装的嵌套集合 / 字符串——恢复轮已实测
+	 * 存出形如 ["java.util.ArrayList",["java.lang.Long",1]] 的封装),统一在任意嵌套里找第一个可解析的数字;
+	 * 找不到返回 0。恢复链路的节点一律用本方法读数字状态键
+	 */
+	public static long longOf(OverAllState state, String key) {
+		return findLong(state.value(key).orElse(null)).orElse(0L);
+	}
+
+	/** 读状态里的 int(与 longOf 同源的形态兼容逻辑);缺失用 defaultValue */
+	public static int intOf(OverAllState state, String key, int defaultValue) {
+		return findLong(state.value(key).orElse(null)).map(Long::intValue).orElse(defaultValue);
+	}
+
+	/** 任意嵌套(集合 / Map / 字符串)里找第一个可解析为 long 的值 */
+	private static Optional<Long> findLong(Object raw) {
+		if (raw instanceof Number number) {
+			return Optional.of(number.longValue());
+		}
+		if (raw instanceof Iterable<?> iterable) {
+			for (Object item : iterable) {
+				Optional<Long> found = findLong(item);
+				if (found.isPresent()) {
+					return found;
+				}
+			}
+			return Optional.empty();
+		}
+		if (raw instanceof Map<?, ?> map) {
+			for (Object item : map.values()) {
+				Optional<Long> found = findLong(item);
+				if (found.isPresent()) {
+					return found;
+				}
+			}
+			return Optional.empty();
+		}
+		if (raw instanceof String text) {
+			try {
+				return Optional.of(Long.parseLong(text.trim()));
+			}
+			catch (NumberFormatException e) {
+				return Optional.empty();
+			}
+		}
+		return Optional.empty();
 	}
 
 	/** 从表块内容解析表名(首行约定;解析不到返回 null) */

@@ -57,7 +57,7 @@ public class SemanticConsistencyNode implements AsyncNodeAction {
 			return CompletableFuture.completedFuture(Map.of(GraphKeys.SEMANTIC_PASSED, false, GraphKeys.SEMANTIC_REASON,
 					"SQL 为空", GraphKeys.SQL_REPAIR_REASON, "SQL 为空", GraphKeys.NODE_STATUS, "语义一致性未通过:SQL 为空"));
 		}
-		long agentId = state.value(GraphKeys.AGENT_ID, Long.class).orElse(0L);
+		long agentId = NodeUtils.longOf(state, GraphKeys.AGENT_ID);
 		AgentService.DatabaseTarget target = agentService.databaseTargetOf(agentId,
 				NodeUtils.stringList(state, GraphKeys.RECALLED_TABLES));
 		String dialect = target == null ? "MySQL" : target.dialect();
@@ -96,7 +96,7 @@ public class SemanticConsistencyNode implements AsyncNodeAction {
 	private String currentInstruction(OverAllState state) {
 		try {
 			String planJson = state.value(GraphKeys.PLAN_JSON, String.class).orElse("");
-			int step = state.value(GraphKeys.PLAN_STEP, 1);
+			int step = NodeUtils.intOf(state, GraphKeys.PLAN_STEP, 1);
 			PlanStep current = PlanUtils.stepAt(PlanUtils.parse(objectMapper, planJson), step);
 			return StringUtils.hasText(current.getInstruction()) ? current.getInstruction() : "无";
 		}

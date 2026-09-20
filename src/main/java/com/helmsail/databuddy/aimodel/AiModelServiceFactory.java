@@ -1,6 +1,9 @@
 package com.helmsail.databuddy.aimodel;
 
+import java.time.Duration;
+
 import io.micrometer.observation.ObservationRegistry;
+import io.netty.channel.ChannelOption;
 
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.client.DefaultChatClientBuilder;
@@ -15,13 +18,18 @@ import org.springframework.ai.openai.OpenAiEmbeddingModel;
 import org.springframework.ai.openai.OpenAiEmbeddingOptions;
 import org.springframework.ai.openai.api.OpenAiApi;
 import org.springframework.ai.retry.RetryUtils;
+import org.springframework.http.client.ReactorClientHttpRequestFactory;
+import org.springframework.http.client.reactive.ReactorClientHttpConnector;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
+import org.springframework.web.client.RestClient;
+import org.springframework.web.reactive.function.client.WebClient;
 
 import com.helmsail.databuddy.exception.BusinessException;
 import com.helmsail.databuddy.exception.ErrorCode;
 
 import lombok.extern.slf4j.Slf4j;
+import reactor.netty.http.client.HttpClient;
 
 /**
  * 模型服务工厂:同时生效的 CHAT 与 EMBEDDING 各一个实例。
@@ -87,6 +95,17 @@ public class AiModelServiceFactory {
 		}
 	}
 
+	/** 清空某类型的运行时实例(删除激活配置时调用):置空即视为未配置,调用方将得到"未配置可用的模型" */
+	public void clear(AiModelType type) {
+		switch (type) {
+			case CHAT -> this.chatClient = null;
+			case EMBEDDING -> {
+				this.embeddingModel = null;
+				this.embeddingModelName = null;
+			}
+		}
+	}
+
 	/** 配置基本完整性校验:保存配置(服务)与刷新实例共用(服务与工厂同包) */
 	void validate(AiModelConfig config) {
 		if (config.getModelType() == null) {
@@ -140,10 +159,26 @@ public class AiModelServiceFactory {
 		return model;
 	}
 
-	/** 统一走 OpenAI 兼容协议,apiKey 为空时传空串(兼容本地无鉴权部署) */
+	/**
+	 * 统一走 OpenAI 兼容协议,apiKey 为空时传空串(兼容本地无鉴权部署);
+	 * 超时策略:连接 10s 快速失败;响应(读空闲)放大到 300s——非流式长文本生成(规划 / 报告)服务端可能长时间零字节下发,
+	 * 受默认读超时约束会在中途抛 ReadTimeoutException(已实测),放大后覆盖长生成场景
+	 */
 	private OpenAiApi buildApi(AiModelConfig config) {
 		String apiKey = StringUtils.hasText(config.getApiKey()) ? config.getApiKey() : "";
-		return OpenAiApi.builder().baseUrl(config.getBaseUrl()).apiKey(apiKey).build();
+		return OpenAiApi.builder()
+			.baseUrl(config.getBaseUrl())
+			.apiKey(apiKey)
+			.restClientBuilder(RestClient.builder().requestFactory(new ReactorClientHttpRequestFactory(httpClient())))
+			.webClientBuilder(WebClient.builder().clientConnector(new ReactorClientHttpConnector(httpClient())))
+			.build();
+	}
+
+	/** 模型调用 HTTP 客户端(每个连接器独立实例:内部持有各自连接池状态) */
+	private static HttpClient httpClient() {
+		return HttpClient.create()
+			.option(ChannelOption.CONNECT_TIMEOUT_MILLIS, 10_000)
+			.responseTimeout(Duration.ofSeconds(300));
 	}
 
 }

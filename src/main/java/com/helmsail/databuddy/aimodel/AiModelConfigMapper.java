@@ -2,6 +2,7 @@ package com.helmsail.databuddy.aimodel;
 
 import java.util.List;
 
+import org.apache.ibatis.annotations.Delete;
 import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Options;
@@ -35,5 +36,13 @@ public interface AiModelConfigMapper {
 	/** 激活滚动:目标行置 1、同类型其余置 NULL(一条语句原子完成) */
 	@Update("UPDATE ai_model_config SET is_active = IF(id = #{id}, 1, NULL) WHERE model_type = #{type}")
 	void activate(@Param("id") Long id, @Param("type") AiModelType type);
+
+	/** 删除配置行(激活行删除 = 同时停用,运行时实例由 Service 清空) */
+	@Delete("DELETE FROM ai_model_config WHERE id = #{id}")
+	void deleteById(@Param("id") Long id);
+
+	/** 修改配置行(类型不可改;apiKey 由 Service 合并后传入) */
+	@Update("UPDATE ai_model_config SET model_type = #{modelType}, model_name = #{modelName}, base_url = #{baseUrl}, api_key = #{apiKey}, temperature = #{temperature}, max_tokens = #{maxTokens}, top_p = #{topP}, frequency_penalty = #{frequencyPenalty}, presence_penalty = #{presencePenalty}, seed = #{seed} WHERE id = #{id}")
+	void update(AiModelConfig config);
 
 }

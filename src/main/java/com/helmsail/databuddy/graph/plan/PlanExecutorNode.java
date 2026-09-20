@@ -12,6 +12,7 @@ import com.alibaba.cloud.ai.graph.StateGraph;
 import com.alibaba.cloud.ai.graph.action.AsyncNodeAction;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.helmsail.databuddy.graph.GraphKeys;
+import com.helmsail.databuddy.graph.util.NodeUtils;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -38,7 +39,7 @@ public class PlanExecutorNode implements AsyncNodeAction {
 	@Override
 	@Observed(name = "node.planExecutor", contextualName = "计划执行")
 	public CompletableFuture<Map<String, Object>> apply(OverAllState state) {
-		int step = state.value(GraphKeys.PLAN_STEP, 1);
+		int step = NodeUtils.intOf(state, GraphKeys.PLAN_STEP, 1);
 		String planJson = state.value(GraphKeys.PLAN_JSON, String.class).orElse("");
 		Plan plan;
 		try {
@@ -80,7 +81,7 @@ public class PlanExecutorNode implements AsyncNodeAction {
 
 	/** 校验不过:计数 +1 打回规划;超限写终止语(分流器见终止语 → 终点) */
 	private Map<String, Object> repair(OverAllState state, String reason) {
-		int count = state.value(GraphKeys.PLAN_REPAIR_COUNT, 0) + 1;
+		int count = NodeUtils.intOf(state, GraphKeys.PLAN_REPAIR_COUNT, 0) + 1;
 		if (count > PlanUtils.MAX_PLAN_REPAIR) {
 			log.error("计划重写超限({} 次),终止: {}", PlanUtils.MAX_PLAN_REPAIR, reason);
 			return Map.of(GraphKeys.PLAN_VALID, false, GraphKeys.FINAL_ANSWER, TERMINATION, GraphKeys.NODE_STATUS,

@@ -46,7 +46,7 @@ public class TableRelationNode implements AsyncNodeAction {
 	@Override
 	@Observed(name = "node.tableRelation", contextualName = "表关系补齐")
 	public CompletableFuture<Map<String, Object>> apply(OverAllState state) {
-		long agentId = state.value(GraphKeys.AGENT_ID, Long.class).orElse(0L);
+		long agentId = NodeUtils.longOf(state, GraphKeys.AGENT_ID);
 		List<String> seeds = seedTables(state);
 		if (seeds.isEmpty()) {
 			log.warn("表关系节点收到空表集,跳过: agent={}", agentId);

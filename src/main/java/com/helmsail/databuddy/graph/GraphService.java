@@ -1,6 +1,7 @@
 package com.helmsail.databuddy.graph;
 
 import java.time.Duration;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -20,6 +21,7 @@ import com.alibaba.cloud.ai.graph.CompiledGraph;
 import com.alibaba.cloud.ai.graph.NodeOutput;
 import com.alibaba.cloud.ai.graph.OverAllState;
 import com.alibaba.cloud.ai.graph.RunnableConfig;
+import com.alibaba.cloud.ai.graph.StateGraph;
 import com.alibaba.cloud.ai.graph.checkpoint.BaseCheckpointSaver;
 import com.alibaba.cloud.ai.graph.state.StateSnapshot;
 import com.helmsail.databuddy.agent.AgentService;
@@ -236,8 +238,9 @@ public class GraphService {
 	}
 
 	/**
-	 * 挂起判定与处理:停在中断点(StateSnapshot.next 非空 = 还有待执行节点)→ 保留检查点 +
-	 * 登记待确认 + 下发 plan 帧;自然跑完返回 false。取状态异常按自然完成处理(防御)
+	 * 挂起判定与处理:停在中断点(StateSnapshot.next 含待执行的真实节点)→ 保留检查点 +
+	 * 登记待确认 + 下发 plan 帧;自然跑完(下一跳恰为终点标记 __END__,已实测)返回 false。
+	 * 取状态异常按自然完成处理(防御)
 	 */
 	private boolean suspend(GraphRun run) {
 		StateSnapshot snapshot;
@@ -249,6 +252,13 @@ public class GraphService {
 			return false;
 		}
 		if (snapshot == null || !StringUtils.hasText(snapshot.next())) {
+			return false;
+		}
+		// 真挂起 = 下一跳里存在待执行的真实节点;自然跑完的 next 恰为终点标记(如 __END__),不算挂起
+		boolean hasPendingNode = Arrays.stream(snapshot.next().split(","))
+			.map(String::trim)
+			.anyMatch(node -> StringUtils.hasText(node) && !StateGraph.END.equals(node));
+		if (!hasPendingNode) {
 			return false;
 		}
 		String planJson = snapshot.state().value(GraphKeys.PLAN_JSON, String.class).orElse("");
@@ -351,13 +361,26 @@ public class GraphService {
 		return System.nanoTime() - pending.createdAtNanos() > planReviewTimeout.toNanos();
 	}
 
-	/** 释放检查点:正常完成/停止/出错都作废;挂起轮是唯一保留的例外(确认/作废/超时后照常释放) */
+	/**
+	 * 释放检查点(正常完成/停止/出错都作废;挂起轮是唯一保留的例外,确认/作废/超时后照常释放):
+	 * 引擎级释放(标记,清引擎内存缓存)+ 物理清行(防 released 行累积——行会随"跑完即释放"无线堆积,已实测)。
+	 * 幂等:线程不存在/已释放时引擎抛"not found or already released",属正常场景(如错误轮/重复释放),降噪处理
+	 */
 	private void releaseCheckpoint(String threadId) {
 		try {
 			checkpointSaver.release(RunnableConfig.builder().threadId(threadId).build());
 		}
 		catch (Exception e) {
-			log.warn("检查点释放失败: threadId={}", threadId, e);
+			log.debug("引擎级检查点释放跳过(不存在/已释放): threadId={}, {}", threadId, e.getMessage());
+		}
+		try {
+			jdbcTemplate.update(
+					"DELETE FROM GRAPH_CHECKPOINT WHERE thread_id IN (SELECT thread_id FROM GRAPH_THREAD WHERE thread_name = ?)",
+					threadId);
+			jdbcTemplate.update("DELETE FROM GRAPH_THREAD WHERE thread_name = ?", threadId);
+		}
+		catch (Exception e) {
+			log.warn("检查点行清理失败: threadId={}", threadId, e);
 		}
 	}
 

@@ -63,7 +63,7 @@ public class KnowledgeRecallNode implements AsyncNodeAction {
 	public CompletableFuture<Map<String, Object>> apply(OverAllState state) {
 		String input = state.value(GraphKeys.INPUT, String.class).orElse("");
 		String history = state.value(GraphKeys.HISTORY, String.class).orElse("(无)");
-		long agentId = state.value(GraphKeys.AGENT_ID, Long.class).orElse(0L);
+		long agentId = NodeUtils.longOf(state, GraphKeys.AGENT_ID);
 		String query = rewrite(input, history);
 		List<RetrievedChunk> hits = agentService.retrieve(agentId, query, TOP_K, KNOWLEDGE_SOURCES);
 		log.info("知识召回: agent={}, 重写查询=\"{}\", 命中 {} 条", agentId, query, hits.size());

@@ -28,6 +28,12 @@ import lombok.extern.slf4j.Slf4j;
 @Service
 public class VectorService {
 
+	/** 删除前检索用的占位查询文本(结果由过滤条件限定,相似度仅用于排序不参与筛选) */
+	private static final String CLEANUP_QUERY = "cleanup";
+
+	/** 按过滤删除前的单次读取上限(同源块数超过此值属异常数据,按上限截断) */
+	private static final int CLEANUP_TOP_K = 10000;
+
 	private final VectorStore vectorStore;
 
 	private final AiModelServiceFactory aiModelServiceFactory;
@@ -71,7 +77,7 @@ public class VectorService {
 		if (!embeddingAvailable()) {
 			return;
 		}
-		vectorStore.delete(agentFilter(agentId) + " && " + VectorMetadata.SOURCE_TYPE + " == '" + sourceType.name()
+		deleteByFilter(agentFilter(agentId) + " && " + VectorMetadata.SOURCE_TYPE + " == '" + sourceType.name()
 				+ "' && " + VectorMetadata.SOURCE_ID + " == " + sourceId);
 	}
 
@@ -80,7 +86,25 @@ public class VectorService {
 		if (!embeddingAvailable()) {
 			return;
 		}
-		vectorStore.delete(agentFilter(agentId));
+		deleteByFilter(agentFilter(agentId));
+	}
+
+	/**
+	 * 按过滤条件删除向量:SimpleVectorStore 未实现 doDelete(Filter.Expression)(父类默认抛
+	 * UnsupportedOperationException,已实测),因此改为"先按条件检索取回文档 id、再按 id 删除";
+	 * 检索用占位 query + 阈值 0,结果完全由过滤条件决定(仅多一次嵌入调用,删除为低频操作)
+	 */
+	private void deleteByFilter(String filterExpression) {
+		List<Document> hits = vectorStore.similaritySearch(SearchRequest.builder()
+			.query(CLEANUP_QUERY)
+			.topK(CLEANUP_TOP_K)
+			.similarityThreshold(0.0)
+			.filterExpression(filterExpression)
+			.build());
+		if (hits == null || hits.isEmpty()) {
+			return;
+		}
+		vectorStore.delete(hits.stream().map(Document::getId).toList());
 	}
 
 	/**

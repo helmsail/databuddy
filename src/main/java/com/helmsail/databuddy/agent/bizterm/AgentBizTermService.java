@@ -96,6 +96,15 @@ public class AgentBizTermService {
 		log.info("术语删除: agent={}, term={} (#{})", old.getAgentId(), old.getBusinessTerm(), id);
 	}
 
+	/** 全量重建:全部术语逐行向量化(重启后内存向量库丢失的恢复入口;失败行落 FAILED 待重试) */
+	public void rebuildAll(long agentId) {
+		List<AgentBizTerm> rows = mapper.selectByAgent(agentId);
+		for (AgentBizTerm row : rows) {
+			syncRow(row);
+		}
+		log.info("术语全量重建完成: agent={}, 共 {} 条", agentId, rows.size());
+	}
+
 	/** 增量重试:仅处理未同步行(PENDING / FAILED);手动重试与定时兜底共用,幂等可反复调 */
 	public void retryUnsynced(long agentId) {
 		List<AgentBizTerm> rows = mapper.selectByAgent(agentId).stream()
@@ -132,10 +141,11 @@ public class AgentBizTermService {
 			log.info("术语向量写入: agent={}, term={} (#{})", term.getAgentId(), term.getBusinessTerm(), term.getId());
 		}
 		catch (Exception e) {
-			log.warn("术语向量化失败: agent={}, term={}, 原因={}", term.getAgentId(), term.getBusinessTerm(), e.getMessage());
-			mapper.updateSyncStatus(term.getId(), EmbeddingStatus.FAILED, truncate(e.getMessage()));
+			String reason = e.getClass().getSimpleName() + (e.getMessage() == null ? "" : ": " + e.getMessage());
+			log.warn("术语向量化失败: agent={}, term={}", term.getAgentId(), term.getBusinessTerm(), e);
+			mapper.updateSyncStatus(term.getId(), EmbeddingStatus.FAILED, truncate(reason));
 			term.setEmbeddingStatus(EmbeddingStatus.FAILED);
-			term.setErrorMsg(truncate(e.getMessage()));
+			term.setErrorMsg(truncate(reason));
 		}
 	}
 

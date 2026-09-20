@@ -51,7 +51,7 @@ public class SchemaRecallNode implements AsyncNodeAction {
 	public CompletableFuture<Map<String, Object>> apply(OverAllState state) {
 		String canonical = state.value(GraphKeys.CANONICAL_QUERY, String.class)
 			.orElse(state.value(GraphKeys.INPUT, String.class).orElse(""));
-		long agentId = state.value(GraphKeys.AGENT_ID, Long.class).orElse(0L);
+		long agentId = NodeUtils.longOf(state, GraphKeys.AGENT_ID);
 		List<RetrievedChunk> tables = agentService.retrieve(agentId, canonical, TOP_K, TABLE_SOURCE);
 		if (tables.isEmpty()) {
 			log.warn("Schema 召回未命中: agent={}, 查询=\"{}\"", agentId, canonical);

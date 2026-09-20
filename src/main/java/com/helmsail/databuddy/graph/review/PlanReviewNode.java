@@ -13,6 +13,7 @@ import com.alibaba.cloud.ai.graph.OverAllState;
 import com.alibaba.cloud.ai.graph.action.AsyncNodeAction;
 import com.helmsail.databuddy.graph.GraphKeys;
 import com.helmsail.databuddy.graph.plan.PlanUtils;
+import com.helmsail.databuddy.graph.util.NodeUtils;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -47,7 +48,7 @@ public class PlanReviewNode implements AsyncNodeAction {
 			return CompletableFuture.completedFuture(Map.of(GraphKeys.PLAN_REVIEW_ENABLED, false, GraphKeys.PLAN_NEXT,
 					GraphKeys.PLAN_EXECUTOR, GraphKeys.NODE_STATUS, "计划已确认:开始执行"));
 		}
-		int count = state.value(GraphKeys.PLAN_REPAIR_COUNT, 0) + 1;
+		int count = NodeUtils.intOf(state, GraphKeys.PLAN_REPAIR_COUNT, 0) + 1;
 		if (count > PlanUtils.MAX_PLAN_REPAIR) {
 			log.warn("计划否决超限({} 次),终止", PlanUtils.MAX_PLAN_REPAIR);
 			return CompletableFuture.completedFuture(Map.of(GraphKeys.FINAL_ANSWER, TERMINATION, GraphKeys.NODE_STATUS,

@@ -152,8 +152,9 @@ public class AgentBizTableService {
 				synced++;
 			}
 			catch (Exception e) {
-				log.warn("表向量化失败: agent={}, table={}, 原因={}", agentId, row.getTableName(), e.getMessage());
-				mapper.updateSyncStatus(row.getId(), EmbeddingStatus.FAILED, truncate(e.getMessage()));
+				String reason = e.getClass().getSimpleName() + (e.getMessage() == null ? "" : ": " + e.getMessage());
+				log.warn("表向量化失败: agent={}, table={}", agentId, row.getTableName(), e);
+				mapper.updateSyncStatus(row.getId(), EmbeddingStatus.FAILED, truncate(reason));
 			}
 		}
 		log.info("表向量化完成: agent={}, 成功 {}/{}", agentId, synced, rows.size());

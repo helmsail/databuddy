@@ -56,7 +56,7 @@ public class SqlGenerateNode implements AsyncNodeAction {
 	@Override
 	@Observed(name = "node.sqlGenerate", contextualName = "SQL 生成")
 	public CompletableFuture<Map<String, Object>> apply(OverAllState state) {
-		int attempt = state.value(GraphKeys.SQL_ATTEMPT, 0) + 1;
+		int attempt = NodeUtils.intOf(state, GraphKeys.SQL_ATTEMPT, 0) + 1;
 		if (attempt > MAX_SQL_ATTEMPT) {
 			return CompletableFuture.completedFuture(replan(state, "SQL 组重试超限: " + lastReason(state)));
 		}
@@ -67,7 +67,7 @@ public class SqlGenerateNode implements AsyncNodeAction {
 		catch (RuntimeException e) {
 			return CompletableFuture.completedFuture(replan(state, "计划解析失败: " + e.getMessage()));
 		}
-		long agentId = state.value(GraphKeys.AGENT_ID, Long.class).orElse(0L);
+		long agentId = NodeUtils.longOf(state, GraphKeys.AGENT_ID);
 		AgentService.DatabaseTarget target = agentService.databaseTargetOf(agentId,
 				NodeUtils.stringList(state, GraphKeys.RECALLED_TABLES));
 		if (target == null) {
@@ -99,7 +99,7 @@ public class SqlGenerateNode implements AsyncNodeAction {
 
 	/** 升级重规划:计数 +1;超限终止语收场 */
 	private Map<String, Object> replan(OverAllState state, String reason) {
-		int count = state.value(GraphKeys.PLAN_REPAIR_COUNT, 0) + 1;
+		int count = NodeUtils.intOf(state, GraphKeys.PLAN_REPAIR_COUNT, 0) + 1;
 		if (count > PlanUtils.MAX_PLAN_REPAIR) {
 			log.error("SQL 组升级重规划超限,终止: {}", reason);
 			return Map.of(GraphKeys.SQL_NEXT, "end", GraphKeys.FINAL_ANSWER, TERMINATION, GraphKeys.NODE_STATUS,
@@ -113,7 +113,7 @@ public class SqlGenerateNode implements AsyncNodeAction {
 	/** 读计划当前步指令(枢纽已校验过计划,这里防御性解析) */
 	private String currentInstruction(OverAllState state) {
 		String planJson = state.value(GraphKeys.PLAN_JSON, String.class).orElse("");
-		int step = state.value(GraphKeys.PLAN_STEP, 1);
+		int step = NodeUtils.intOf(state, GraphKeys.PLAN_STEP, 1);
 		PlanStep current = PlanUtils.stepAt(PlanUtils.parse(objectMapper, planJson), step);
 		return StringUtils.hasText(current.getInstruction()) ? current.getInstruction() : "无";
 	}

@@ -98,6 +98,15 @@ public class AgentBizQaService {
 		log.info("问答删除: agent={}, question={} (#{})", old.getAgentId(), old.getQuestion(), id);
 	}
 
+	/** 全量重建:全部问答逐行向量化(重启后内存向量库丢失的恢复入口;失败行落 FAILED 待重试) */
+	public void rebuildAll(long agentId) {
+		List<AgentBizQa> rows = mapper.selectByAgent(agentId);
+		for (AgentBizQa row : rows) {
+			syncRow(row);
+		}
+		log.info("问答全量重建完成: agent={}, 共 {} 条", agentId, rows.size());
+	}
+
 	/** 增量重试:仅处理未同步行(PENDING / FAILED);手动重试与定时兜底共用,幂等可反复调 */
 	public void retryUnsynced(long agentId) {
 		List<AgentBizQa> rows = mapper.selectByAgent(agentId).stream()
@@ -134,10 +143,11 @@ public class AgentBizQaService {
 			log.info("问答向量写入: agent={}, question={} (#{})", qa.getAgentId(), qa.getQuestion(), qa.getId());
 		}
 		catch (Exception e) {
-			log.warn("问答向量化失败: agent={}, question={}, 原因={}", qa.getAgentId(), qa.getQuestion(), e.getMessage());
-			mapper.updateSyncStatus(qa.getId(), EmbeddingStatus.FAILED, truncate(e.getMessage()));
+			String reason = e.getClass().getSimpleName() + (e.getMessage() == null ? "" : ": " + e.getMessage());
+			log.warn("问答向量化失败: agent={}, question={}", qa.getAgentId(), qa.getQuestion(), e);
+			mapper.updateSyncStatus(qa.getId(), EmbeddingStatus.FAILED, truncate(reason));
 			qa.setEmbeddingStatus(EmbeddingStatus.FAILED);
-			qa.setErrorMsg(truncate(e.getMessage()));
+			qa.setErrorMsg(truncate(reason));
 		}
 	}
 

@@ -59,7 +59,7 @@ public class SqlExecuteNode implements AsyncNodeAction {
 			return CompletableFuture.completedFuture(Map.of(GraphKeys.SQL_NEXT, "regenerate", GraphKeys.SQL_REPAIR_REASON,
 					"SQL 为空", GraphKeys.NODE_STATUS, "SQL 为空,重新生成"));
 		}
-		long agentId = state.value(GraphKeys.AGENT_ID, Long.class).orElse(0L);
+		long agentId = NodeUtils.longOf(state, GraphKeys.AGENT_ID);
 		AgentService.DatabaseTarget target = agentService.databaseTargetOf(agentId,
 				NodeUtils.stringList(state, GraphKeys.RECALLED_TABLES));
 		if (target == null) {
@@ -67,7 +67,7 @@ public class SqlExecuteNode implements AsyncNodeAction {
 					"无法定位分析目标库(智能体未绑定数据表,或数据表跨多个库无法判定),本轮分析无法继续。", GraphKeys.NODE_STATUS,
 					"SQL 执行终止:无法定位目标库"));
 		}
-		int step = state.value(GraphKeys.PLAN_STEP, 1);
+		int step = NodeUtils.intOf(state, GraphKeys.PLAN_STEP, 1);
 		try {
 			TableData data = bizDatabaseService.executeQuery(target.configId(), sql);
 			String resultJson = resultJson(step, sql, data);

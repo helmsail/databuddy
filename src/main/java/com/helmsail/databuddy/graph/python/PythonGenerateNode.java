@@ -50,7 +50,7 @@ public class PythonGenerateNode implements AsyncNodeAction {
 	@Override
 	@Observed(name = "node.pythonGenerate", contextualName = "Python 生成")
 	public CompletableFuture<Map<String, Object>> apply(OverAllState state) {
-		int attempt = state.value(GraphKeys.PYTHON_ATTEMPT, 0) + 1;
+		int attempt = NodeUtils.intOf(state, GraphKeys.PYTHON_ATTEMPT, 0) + 1;
 		String canonical = state.value(GraphKeys.CANONICAL_QUERY, String.class)
 			.orElse(state.value(GraphKeys.INPUT, String.class).orElse(""));
 		String user = NodeUtils.renderPrompt(promptMapper, GraphKeys.PYTHON_GENERATE,
@@ -68,7 +68,7 @@ public class PythonGenerateNode implements AsyncNodeAction {
 	private String currentInstruction(OverAllState state) {
 		try {
 			String planJson = state.value(GraphKeys.PLAN_JSON, String.class).orElse("");
-			int step = state.value(GraphKeys.PLAN_STEP, 1);
+			int step = NodeUtils.intOf(state, GraphKeys.PLAN_STEP, 1);
 			PlanStep current = PlanUtils.stepAt(PlanUtils.parse(objectMapper, planJson), step);
 			return StringUtils.hasText(current.getInstruction()) ? current.getInstruction() : "按计划完成本步分析";
 		}

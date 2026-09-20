@@ -47,7 +47,7 @@ public class PythonAnalyzeNode implements AsyncNodeAction {
 		String user = NodeUtils.renderPrompt(promptMapper, GraphKeys.PYTHON_ANALYZE,
 				Map.of("canonical_query", canonical, "python_output", pythonOutput));
 		String analysis = aiModelServiceFactory.getChatClient().prompt().user(user).call().content();
-		int step = state.value(GraphKeys.PLAN_STEP, 1);
+		int step = NodeUtils.intOf(state, GraphKeys.PLAN_STEP, 1);
 		Map<String, String> results = PlanUtils.withEntry(stepResults(state), "step_" + step + "_analysis", analysis);
 		log.info("Python 分析完成: 第 {} 步", step);
 		return CompletableFuture.completedFuture(Map.of(GraphKeys.PYTHON_ANALYSIS, analysis, GraphKeys.STEP_RESULTS, results,
