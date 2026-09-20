@@ -13,7 +13,7 @@ import lombok.extern.slf4j.Slf4j;
  * 会话记忆服务:跨轮记忆的唯一出入口(窗口 + 摘要),独立于图与检查点。
  * 存储为 session_memory 表(一行 = 一轮对话;超窗老轮由 AI 压成一条摘要条目);
  * 组件是"哑"的且零内存状态:存取时机全部由外部显式调用——
- * 进图前 buildContext(读);成功收尾 finishTurn(写);被拒重来 rollbackTurn(退);
+ * 进图前 buildContext(读);成功收尾 finishTurn(写);
  * 停止/出错不落库:不需要调任何方法,记忆天然保持干净。
  * 同一会话同时只允许一轮(由调用方保证)
  */
@@ -83,11 +83,6 @@ public class SessionMemoryService {
 		turn.setAnswer(truncate(answer.trim(), MAX_ANSWER_CHARS));
 		mapper.insert(turn);
 		compressOverflow(sessionId);
-	}
-
-	/** 被拒重来:回退最后一轮原文(被拒的轮必在窗口内,不会已并入摘要) */
-	public void rollbackTurn(String sessionId) {
-		mapper.deleteLatestTurn(sessionId);
 	}
 
 	/** 清某线程键的全部记忆条目(删会话编排中由图侧接口调用;本组件不判断时机) */

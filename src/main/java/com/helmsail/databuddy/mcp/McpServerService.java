@@ -29,7 +29,10 @@ import lombok.extern.slf4j.Slf4j;
  * MCP 工具服务(入口二):把图能力暴露给 MCP 客户端(Claude/Cursor 等)。
  * 三个工具:list_agents(选 agentId)/ nl2sql(回 SQL 文本)/ query_data(回数据预览);
  * 底层共用 GraphService.runLight(轻档跑图,无帧无流);业务错误按"工具结果文本"返回
- * 而不是协议异常(主流约定:让调用方 LLM 能读到原因并转述)
+ * 而不是协议异常(主流约定:让调用方 LLM 能读到原因并转述)。
+ * 线程模型(实证):MCP 工具为同步契约,SDK 传输层(WebFlux 0.17.0)不做调度器卸载,工具在请求线程上同步执行;
+ * 图执行已调度到弹性线程(见 GraphService.runLight),但等待发生在调用线程——单机单用户可接受;
+ * 若未来并发调用,MCP 侧需换异步工具规格
  */
 @Slf4j
 @Service

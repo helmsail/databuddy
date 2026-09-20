@@ -8,7 +8,10 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
 
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.event.EventListener;
 import org.springframework.http.codec.ServerSentEvent;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -36,7 +39,7 @@ import reactor.core.scheduler.Schedulers;
  * (step 过程帧 / plan 计划帧 / sql 帧 / result 结果帧 / text 正文 / done / error)、登记运行。
  * 常规轮:跑完/停止/出错都释放检查点,成功的轮落进会话记忆(在 done 之后,不挡用户);
  * 挂起轮(人工确认闸停在中断点):检查点保留("跑完即释放"规则的唯一破例)+ 登记待确认清单 +
- * 下发 plan 帧;恢复:写决定(updateState)+ 同 threadId 从断点续跑(新流);等待窗口超时由定时清扫作废。
+ * 下发 plan 帧;恢复:写决定(updateState)+ 同 threadId 从断点续跑(新流);等待窗口超时由定时清扫作废,进程重启由启动钩子清空检查点表(旧挂起一律作废)。
  * 记忆读写都在图外:进图前 buildContext 注入 HISTORY,跑完 finishTurn 写回
  */
 @Slf4j
@@ -51,6 +54,9 @@ public class GraphService {
 
 	private final AgentService agentService;
 
+	/** 引擎检查点表(GRAPH_THREAD/GRAPH_CHECKPOINT)的清除口:启动清孤儿行用 */
+	private final JdbcTemplate jdbcTemplate;
+
 	/** 运行表:runId → 现场;停止请求与断连兜底靠它找到"正在跑的订阅"(跑完/停掉即移除) */
 	private final Map<String, GraphRun> runningRuns = new ConcurrentHashMap<>();
 
@@ -61,12 +67,13 @@ public class GraphService {
 	private final Duration planReviewTimeout;
 
 	public GraphService(CompiledGraph graph, BaseCheckpointSaver checkpointSaver, SessionMemoryService sessionMemory,
-			AgentService agentService,
+			AgentService agentService, JdbcTemplate jdbcTemplate,
 			@Value("${databuddy.graph.plan-review-timeout:24h}") Duration planReviewTimeout) {
 		this.graph = graph;
 		this.checkpointSaver = checkpointSaver;
 		this.sessionMemory = sessionMemory;
 		this.agentService = agentService;
+		this.jdbcTemplate = jdbcTemplate;
 		this.planReviewTimeout = planReviewTimeout;
 	}
 
@@ -96,7 +103,7 @@ public class GraphService {
 		}
 		if (isExpired(pending)) {
 			pendingPlans.remove(runId);
-			releaseCheckpoint(runId);
+			releaseCheckpointAsync(runId);
 			throw new BusinessException(ErrorCode.INVALID_INPUT, "计划已过期,请重新提问(runId=" + runId + ")");
 		}
 		GraphRun run = new GraphRun(runId, pending.sessionId(), pending.agentId(), "(计划确认)", sink);
@@ -273,13 +280,13 @@ public class GraphService {
 		if (run != null) {
 			log.info("停止执行: runId={}", runId);
 			run.stop();
-			releaseCheckpoint(runId);
+			releaseCheckpointAsync(runId);
 			run.getSink().tryEmitComplete();
 			return;
 		}
 		if (pendingPlans.remove(runId) != null) {
 			log.info("取消挂起计划: runId={}", runId);
-			releaseCheckpoint(runId);
+			releaseCheckpointAsync(runId);
 		}
 	}
 
@@ -314,12 +321,28 @@ public class GraphService {
 		}
 	}
 
+	/**
+	 * 启动清理:进程重启后内存待确认清单归零,MySQL 里的挂起检查点行成为孤儿(引擎表,单机独占,清空无副作用);
+	 * 重启后旧挂起一律按"已过期"处理(与惰性/定时过期同一出口)。失败只记日志,不拦启动
+	 */
+	@EventListener(ApplicationReadyEvent.class)
+	public void cleanupOrphanCheckpoints() {
+		try {
+			jdbcTemplate.update("DELETE FROM GRAPH_CHECKPOINT");
+			jdbcTemplate.update("DELETE FROM GRAPH_THREAD");
+			log.info("启动清理:图检查点表已清空(重启后旧挂起作废)");
+		}
+		catch (Exception e) {
+			log.warn("启动清理检查点失败(忽略): {}", e.getMessage());
+		}
+	}
+
 	/** 同会话旧挂起作废(新消息 = 放弃等待;释放检查点,登记移除) */
 	private void discardPendingsOf(String sessionId) {
 		for (PendingPlan pending : List.copyOf(pendingPlans.values())) {
 			if (pending.sessionId().equals(sessionId) && pendingPlans.remove(pending.runId()) != null) {
 				log.info("同会话旧挂起作废: runId={}", pending.runId());
-				releaseCheckpoint(pending.runId());
+				releaseCheckpointAsync(pending.runId());
 			}
 		}
 	}
@@ -336,6 +359,11 @@ public class GraphService {
 		catch (Exception e) {
 			log.warn("检查点释放失败: threadId={}", threadId, e);
 		}
+	}
+
+	/** 释放检查点(异步版):stop/作废路径可能来自 Netty 事件循环,把阻塞的 MySQL 往返整体挪到弹性线程 */
+	private void releaseCheckpointAsync(String threadId) {
+		Mono.fromRunnable(() -> releaseCheckpoint(threadId)).subscribeOn(Schedulers.boundedElastic()).subscribe();
 	}
 
 	private void emit(GraphRun run, GraphSseChunk chunk) {

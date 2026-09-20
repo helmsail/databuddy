@@ -6,8 +6,8 @@
 #   docker compose --profile sandbox build   # 用到 Python 执行前先构建沙箱镜像(运行期 --pull=never)
 #   docker compose down                      # 停删(库随容器消失;data/ 留在宿主,不提交)
 #
-# —— 变量唯一来源:.env(已 gitignore) ——
-#   APP_PORT / MYSQL_PORT / MYSQL_ROOT_PASSWORD / DATABUDDY_DATA_ROOT / PIP_INDEX / APT_MIRROR
+# —— 变量唯一来源:.env(已 gitignore;应用本机直跑同样经 spring.config.import 读取本文件) ——
+#   APP_PORT / MYSQL_PORT / MYSQL_ROOT_PASSWORD / DATABUDDY_DATA_ROOT / DATABUDDY_AES_KEY / PIP_INDEX / APT_MIRROR
 #   compose 侧一律 ${VAR:?} 引用:不留任何默认值,缺失或为空直接报错点名。
 # —— 数据根目录(DooD 关键:宿主路径与容器路径必须是"同一个字符串")——
 #   沙箱容器由应用经挂载的 docker.sock 调【宿主 daemon】创建(docker-out-of-docker),
@@ -51,6 +51,8 @@ services:
       SPRING_DATASOURCE_URL: "jdbc:mysql://mysql:3306/databuddy?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true"
       SPRING_DATASOURCE_USERNAME: root
       SPRING_DATASOURCE_PASSWORD: ${MYSQL_ROOT_PASSWORD:?}
+      # 敏感字段加密密钥(正式环境务必更换;换钥后需重存业务库配置,见 .env 注释)
+      DATABUDDY_AES_KEY: ${DATABUDDY_AES_KEY:?}
       # 数据根 → 文档存储与沙箱工作目录(宿主/容器必须同字符串,见文件头)
       DATABUDDY_STORAGE_LOCALROOTPATH: ${DATABUDDY_DATA_ROOT:?}/files
       DATABUDDY_PYTHON_WORKROOT: ${DATABUDDY_DATA_ROOT:?}/sandbox

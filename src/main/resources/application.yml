@@ -1,12 +1,15 @@
 spring:
   application:
     name: databuddy
+  config:
+    # 变量唯一来源:项目根 .env(已 gitignore;本机直跑与 compose 共用同一份);文件不存在(如容器内)则跳过,改由环境变量注入
+    import: optional:file:./.env[.properties]
   reactor:
     context-propagation: auto # Reactor 上下文自动传播:图上节点(@Observed)的 span 才能挂到 HTTP 请求的 trace 上
   datasource: # 系统库(应用自有:提示词、图检查点等元数据;被分析的业务库走 bizdatabase 包,jdbc 引擎内嵌于此)
     url: jdbc:mysql://localhost:3306/databuddy?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
     username: root
-    password: root
+    password: ${DATABUDDY_DB_PASSWORD} # 机密:无默认值,来自 .env / 容器环境变量(compose 用 SPRING_DATASOURCE_PASSWORD 覆盖);缺失即启动失败
   sql:
     init: # 启动执行系统库初始化脚本(幂等:IF NOT EXISTS)
       mode: always
@@ -38,7 +41,9 @@ databuddy:
     exec-timeout: 60s # 单次执行超时,超时容器直接销毁
     work-root: ./data/sandbox # 工作目录根(宿主侧,挂载进容器 /work)
   crypto:
-    aes-key: "SSM6kT5gJH87byj4EGBZ5cm9yKkLbVvSy946Y5oKKdI=" # 敏感字段落库加密(AES-256-GCM,Base64 32 字节);生成:AesUtil.generateKey()
+    # 敏感字段落库加密密钥(AES-256-GCM,Base64 32 字节):机密项,无默认值,来自 .env / 容器环境变量;缺失即启动失败
+    # 正式环境务必更换;换钥后旧的业务库配置密文解不开,需重新保存一遍业务库配置(重加密);生成:AesUtil.generateKey()
+    aes-key: ${DATABUDDY_AES_KEY}
 
 management:
   tracing:

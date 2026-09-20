@@ -28,10 +28,6 @@ public interface SessionMemoryMapper {
 	@Select("SELECT id, session_id, kind, question, answer, create_time FROM session_memory WHERE session_id = #{sessionId} AND kind = 'summary' ORDER BY id DESC LIMIT 1")
 	SessionMemory selectLatestSummary(@Param("sessionId") String sessionId);
 
-	/** 删除最后一条原文轮(被拒回退);无行时空操作 */
-	@Delete("DELETE FROM session_memory WHERE session_id = #{sessionId} AND kind = 'turn' ORDER BY id DESC LIMIT 1")
-	void deleteLatestTurn(@Param("sessionId") String sessionId);
-
 	/** 删除 id 不超过 maxId 的原文轮(压缩完成后的溢出清理) */
 	@Delete("DELETE FROM session_memory WHERE session_id = #{sessionId} AND kind = 'turn' AND id <= #{maxId}")
 	void deleteOverflowTurns(@Param("sessionId") String sessionId, @Param("maxId") Long maxId);
