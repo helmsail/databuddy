@@ -83,6 +83,12 @@
 			<version>1.1.0.0</version>
 		</dependency>
 
+		<!-- MCP Server:把图能力(轻档 nl2sql / 取数)作为工具暴露给 MCP 客户端(Claude/Cursor 等);端点由 starter 自动装配,版本由 BOM 管 -->
+		<dependency>
+			<groupId>org.springframework.ai</groupId>
+			<artifactId>spring-ai-starter-mcp-server-webflux</artifactId>
+		</dependency>
+
 		<!-- 可观测性 -->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>

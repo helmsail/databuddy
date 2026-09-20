@@ -8,6 +8,7 @@ import io.micrometer.observation.annotation.Observed;
 import org.springframework.stereotype.Component;
 
 import com.alibaba.cloud.ai.graph.OverAllState;
+import com.alibaba.cloud.ai.graph.StateGraph;
 import com.alibaba.cloud.ai.graph.action.AsyncNodeAction;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.helmsail.databuddy.graph.GraphKeys;
@@ -59,8 +60,13 @@ public class PlanExecutorNode implements AsyncNodeAction {
 					GraphKeys.PLAN_REVIEW, GraphKeys.NODE_STATUS, "计划待确认:请确认后继续执行"));
 		}
 		int size = plan.getExecutionPlan().size();
-		// 步数走完:报告固定收尾(计划里没有报告步)
+		// 步数走完:轻档直接到终点(跳过报告,SQL 文本即结果);常规走报告固定收尾(计划里没有报告步)
 		if (step > size) {
+			if (Boolean.TRUE.equals(state.value(GraphKeys.NL2SQL_MODE, false))) {
+				log.info("轻档模式:计划执行完成(共 {} 步),直接收束", size);
+				return CompletableFuture.completedFuture(Map.of(GraphKeys.PLAN_VALID, true, GraphKeys.PLAN_NEXT,
+						StateGraph.END, GraphKeys.NODE_STATUS, "轻档完成:SQL 已生成并执行"));
+			}
 			log.info("计划执行完成: 共 {} 步,转报告生成", size);
 			return CompletableFuture.completedFuture(Map.of(GraphKeys.PLAN_VALID, true, GraphKeys.PLAN_NEXT,
 					GraphKeys.REPORT_GENERATOR, GraphKeys.NODE_STATUS, "计划执行完成:共 " + size + " 步,开始生成报告"));

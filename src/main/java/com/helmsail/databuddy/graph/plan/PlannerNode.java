@@ -1,5 +1,6 @@
 package com.helmsail.databuddy.graph.plan;
 
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 
@@ -10,6 +11,7 @@ import org.springframework.util.StringUtils;
 
 import com.alibaba.cloud.ai.graph.OverAllState;
 import com.alibaba.cloud.ai.graph.action.AsyncNodeAction;
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.helmsail.databuddy.aimodel.AiModelServiceFactory;
 import com.helmsail.databuddy.graph.GraphKeys;
@@ -45,6 +47,10 @@ public class PlannerNode implements AsyncNodeAction {
 	@Override
 	@Observed(name = "node.planner", contextualName = "规划")
 	public CompletableFuture<Map<String, Object>> apply(OverAllState state) {
+		// 轻档(MCP):固定单步计划,不调 LLM
+		if (Boolean.TRUE.equals(state.value(GraphKeys.NL2SQL_MODE, false))) {
+			return CompletableFuture.completedFuture(lightPlan(state));
+		}
 		String canonical = state.value(GraphKeys.CANONICAL_QUERY, String.class)
 			.orElse(state.value(GraphKeys.INPUT, String.class).orElse(""));
 		String schema = state.value(GraphKeys.SCHEMA, String.class).orElse("无");
@@ -60,6 +66,27 @@ public class PlannerNode implements AsyncNodeAction {
 		// 步号重置为 1:新计划从头执行(重写场景旧步号作废)
 		return CompletableFuture.completedFuture(Map.of(GraphKeys.PLAN_JSON, planJson, GraphKeys.PLAN_STEP, 1,
 				GraphKeys.NODE_STATUS, note(planJson)));
+	}
+
+	/** 轻档固定计划:单步 SQL 生成,指令用规范查询(参考写死"SQL生成",这里用真实问题描述);不调 LLM */
+	private Map<String, Object> lightPlan(OverAllState state) {
+		String canonical = state.value(GraphKeys.CANONICAL_QUERY, String.class)
+			.orElse(state.value(GraphKeys.INPUT, String.class).orElse(""));
+		PlanStep step = new PlanStep();
+		step.setStep(1);
+		step.setToolToUse(GraphKeys.SQL_GENERATE);
+		step.setInstruction(canonical);
+		Plan plan = new Plan();
+		plan.setThoughtProcess("轻档模式:根据问题直接生成 SQL");
+		plan.setExecutionPlan(List.of(step));
+		try {
+			log.info("轻档模式:固定单步计划(不调 LLM)");
+			return Map.of(GraphKeys.PLAN_JSON, objectMapper.writeValueAsString(plan), GraphKeys.PLAN_STEP, 1,
+					GraphKeys.NODE_STATUS, "规划完成:轻档模式单步执行");
+		}
+		catch (JsonProcessingException e) {
+			throw new IllegalStateException("轻档计划序列化失败: " + e.getMessage(), e);
+		}
 	}
 
 	/** 重写上下文:首次为空;重写时给出原因 + 上一版计划(模型据此避开旧问题) */

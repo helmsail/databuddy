@@ -94,6 +94,7 @@ public class GraphConfig {
 				Map.entry(GraphKeys.PLAN_REPAIR_REASON, KeyStrategy.REPLACE),
 				Map.entry(GraphKeys.PLAN_VALID, KeyStrategy.REPLACE),
 				Map.entry(GraphKeys.PLAN_NEXT, KeyStrategy.REPLACE),
+				Map.entry(GraphKeys.NL2SQL_MODE, KeyStrategy.REPLACE),
 				Map.entry(GraphKeys.SQL_QUERY, KeyStrategy.REPLACE),
 				Map.entry(GraphKeys.SQL_ATTEMPT, KeyStrategy.REPLACE),
 				Map.entry(GraphKeys.SQL_NEXT, KeyStrategy.REPLACE),

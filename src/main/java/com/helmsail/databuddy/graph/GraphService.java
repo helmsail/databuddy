@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutionException;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.codec.ServerSentEvent;
@@ -14,6 +15,7 @@ import org.springframework.util.StringUtils;
 
 import com.alibaba.cloud.ai.graph.CompiledGraph;
 import com.alibaba.cloud.ai.graph.NodeOutput;
+import com.alibaba.cloud.ai.graph.OverAllState;
 import com.alibaba.cloud.ai.graph.RunnableConfig;
 import com.alibaba.cloud.ai.graph.checkpoint.BaseCheckpointSaver;
 import com.alibaba.cloud.ai.graph.state.StateSnapshot;
@@ -139,6 +141,43 @@ public class GraphService {
 		Disposable disposable = outputs.subscribeOn(Schedulers.boundedElastic())
 			.subscribe(output -> onOutput(run, output), error -> onError(run, error), () -> onComplete(run));
 		run.setDisposable(disposable);
+	}
+
+	/**
+	 * 轻档入口(MCP):同步跑图(无帧无流),返回最终状态;NL2SQL_MODE 开 → 规划不调 LLM、走完跳过报告。
+	 * 临时 threadId 跑完即释放(不挂进检查点表);阻塞活调度到弹性线程后取结果;
+	 * 结果解释(取 SQL_QUERY / SQL_RESULT / 终止语)在调用方(McpServerService)
+	 */
+	public OverAllState runLight(long agentId, String question) {
+		if (!StringUtils.hasText(question)) {
+			throw new BusinessException(ErrorCode.INVALID_INPUT, "question 不能为空");
+		}
+		agentService.get(agentId); // 入口校验:agent 不存在 → 业务异常(工具层转错误文本)
+		String threadId = UUID.randomUUID().toString();
+		Map<String, Object> init = Map.of(GraphKeys.INPUT, question, GraphKeys.AGENT_ID, agentId, GraphKeys.HISTORY, "",
+				GraphKeys.NL2SQL_MODE, true);
+		try {
+			return Mono
+				.fromCallable(() -> graph.invoke(init, RunnableConfig.builder().threadId(threadId).build())
+					.orElseThrow(() -> new IllegalStateException("轻档执行未产出状态")))
+				.subscribeOn(Schedulers.boundedElastic())
+				.toFuture()
+				.get();
+		}
+		catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new BusinessException(ErrorCode.SYSTEM_ERROR, "轻档执行被中断", e);
+		}
+		catch (ExecutionException e) {
+			Throwable cause = e.getCause();
+			if (cause instanceof RuntimeException runtime) {
+				throw runtime;
+			}
+			throw new BusinessException(ErrorCode.SYSTEM_ERROR, "轻档执行失败: " + cause.getMessage(), cause);
+		}
+		finally {
+			releaseCheckpoint(threadId);
+		}
 	}
 
 	private void onOutput(GraphRun run, NodeOutput output) {

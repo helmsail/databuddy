@@ -12,6 +12,12 @@ spring:
       mode: always
       encoding: UTF-8
       schema-locations: classpath:db/schema.sql
+  ai:
+    mcp:
+      server: # MCP 入口(同进程同端口自动暴露 /mcp;工具见 mcp 包)
+        name: databuddy
+        version: 1.0.0
+        protocol: STREAMABLE # MCP 传输:Streamable HTTP(2026 规范;给旧版 SSE 客户端用可改 SSE)
 
 mybatis: # 系统库 Mapper 的映射依赖:列名下划线 → 实体属性驼峰(MyBatis 核心默认关闭,显式打开)
   configuration:

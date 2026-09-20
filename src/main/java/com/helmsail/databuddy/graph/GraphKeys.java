@@ -140,6 +140,9 @@ public final class GraphKeys {
 	/** 枢纽派活目标(枢纽/确认节点写,分流器读):节点 ID 或 END 标记 */
 	public static final String PLAN_NEXT = "plan_next";
 
+	/** 轻档开关(NL2SQL 模式:MCP 入口传参;规划固定单步不调 LLM,走完跳过报告) */
+	public static final String NL2SQL_MODE = "nl2sql_mode";
+
 	/** 当前生成的 SQL 文本(SQL 生成节点写;执行节点读) */
 	public static final String SQL_QUERY = "sql_query";
 
