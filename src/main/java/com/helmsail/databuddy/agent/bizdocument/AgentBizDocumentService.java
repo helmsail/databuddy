@@ -92,18 +92,26 @@ public class AgentBizDocumentService {
 		return mapper.selectById(id);
 	}
 
+	/** 文档下载:行不存在 404;文件本体经存储读取(不存在由 storage 抛 404) */
+	public DocumentFile download(long id) {
+		AgentBizDocument document = requireDocument(id);
+		Resource resource = fileStorageFactory.get(document.getStorageType()).getResource(document.getStoragePath());
+		return new DocumentFile(downloadName(document, resource), resource);
+	}
+
 	/**
-	 * 上传文档:预检(agent 存在、名字未占用)→ 文件落存储(按 agent 分目录)→ 行落库 → worker 异步切分向量化,立即返回。
+	 * 上传文档:预检(agent 存在、名字未占用)→ 文件落存储(按 agent 分目录,落盘名 = 文档名:同名互斥即路径互斥,防同源覆盖)→
+	 * 行落库 → worker 异步切分向量化,立即返回。
 	 * name 缺省取文件名;仅接受白名单扩展名(文本类 + pdf/word/excel/ppt 等常见格式,其余直接拒绝)
 	 */
 	public Mono<AgentBizDocument> upload(long agentId, FilePart filePart, String name, SplitterType splitterType) {
 		String docName = resolveName(name, filePart.filename());
-		validateExtension(docName);
+		validateName(docName);
 		SplitterType type = splitterType == null ? SplitterType.PARAGRAPH : splitterType;
 		FileStorage storage = fileStorageFactory.get(StorageType.LOCAL);
 		return Mono.fromRunnable(() -> precheck(agentId, docName))
 			.subscribeOn(Schedulers.boundedElastic())
-			.then(storage.store(filePart, SUB_PATH_PREFIX + agentId))
+			.then(storage.store(filePart, SUB_PATH_PREFIX + agentId, docName))
 			.flatMap(path -> Mono.fromCallable(() -> insertAndTrigger(agentId, docName, type, path, storage))
 				.subscribeOn(Schedulers.boundedElastic()));
 	}
@@ -238,6 +246,17 @@ public class AgentBizDocumentService {
 		}
 	}
 
+	/** 下载文件名:文档名优先;无扩展名时借原文件扩展名(改名后下载仍可正常打开) */
+	private String downloadName(AgentBizDocument document, Resource resource) {
+		String name = document.getName();
+		if (name.lastIndexOf('.') > 0) {
+			return name;
+		}
+		String stored = resource.getFilename();
+		int dot = stored == null ? -1 : stored.lastIndexOf('.');
+		return dot > 0 ? name + stored.substring(dot) : name;
+	}
+
 	/** 读文件文本:markdown 直读保原文,其余经 Tika 提取(自动识别编码 / 去 HTML 标签);提取为空按失败处理 */
 	private String readContent(AgentBizDocument document) {
 		FileStorage storage = fileStorageFactory.get(document.getStorageType());
@@ -276,8 +295,11 @@ public class AgentBizDocumentService {
 		return docName.strip();
 	}
 
-	/** 扩展名白名单校验:白名单外上传即拒(清单见 SUPPORTED_EXTENSIONS) */
-	private void validateExtension(String docName) {
+	/** 文档名校验:不含路径分隔符(落盘文件名直接用文档名),扩展名须在白名单内(清单见 SUPPORTED_EXTENSIONS) */
+	private void validateName(String docName) {
+		if (docName.contains("/") || docName.contains("\\")) {
+			throw new BusinessException(ErrorCode.INVALID_INPUT, "文档名不能包含路径分隔符: " + docName);
+		}
 		if (!SUPPORTED_EXTENSIONS.contains(extension(docName))) {
 			throw new BusinessException(ErrorCode.INVALID_INPUT, "暂不支持的文件类型: " + docName);
 		}
@@ -305,6 +327,10 @@ public class AgentBizDocumentService {
 			return null;
 		}
 		return message.length() <= ERROR_MSG_MAX ? message : message.substring(0, ERROR_MSG_MAX);
+	}
+
+	/** 下载载荷:文件名(Content-Disposition 用)+ 文件资源(WebFlux 零拷贝写出) */
+	public record DocumentFile(String name, Resource resource) {
 	}
 
 }

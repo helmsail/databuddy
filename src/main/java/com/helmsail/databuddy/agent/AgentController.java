@@ -1,8 +1,13 @@
 package com.helmsail.databuddy.agent;
 
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 
+import org.springframework.core.io.Resource;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.http.codec.multipart.FilePart;
 import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -27,6 +32,7 @@ import com.helmsail.databuddy.result.ApiResponse;
 import com.helmsail.databuddy.vectorize.splitter.SplitterType;
 
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 /**
  * 智能体入口:agent 本体与检索走 AgentService,四子域管理动作直调各子域 service(域内允许);
@@ -219,6 +225,22 @@ public class AgentController {
 		return agentBizDocumentService
 			.upload(agentId, file, name, splitterType == null ? null : SplitterType.from(splitterType))
 			.map(ApiResponse::success);
+	}
+
+	/** 下载文档(文件本体;附件流响应,文件名取文档名,中文不乱码) */
+	@GetMapping("/{agentId}/documents/{id}/download")
+	public Mono<ResponseEntity<Resource>> downloadDocument(@PathVariable("agentId") long agentId,
+			@PathVariable("id") long id) {
+		return Mono.fromCallable(() -> {
+			AgentBizDocumentService.DocumentFile file = agentBizDocumentService.download(id);
+			return ResponseEntity.ok()
+				.header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.attachment()
+					.filename(file.name(), StandardCharsets.UTF_8)
+					.build()
+					.toString())
+				.body(file.resource());
+		})
+			.subscribeOn(Schedulers.boundedElastic());
 	}
 
 	/** 修改文档(改名 / 换切分策略;换策略自动重入向量) */

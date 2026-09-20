@@ -2,12 +2,12 @@
 # —— 挂载口径:数据根落宿主(本机=.env 指定 → 项目 data/,已 gitignore),沙箱可用
 #
 # 使用:
-#   docker compose up -d --build             # 起 MySQL + 应用
+#   docker compose up -d --build             # 起 MySQL + 应用 + 前端(浏览器:http://localhost:${WEB_PORT})
 #   docker compose --profile sandbox build   # 用到 Python 执行前先构建沙箱镜像(运行期 --pull=never)
 #   docker compose down                      # 停删(库随容器消失;data/ 留在宿主,不提交)
 #
 # —— 变量唯一来源:.env(已 gitignore;应用本机直跑同样经 spring.config.import 读取本文件) ——
-#   APP_PORT / MYSQL_PORT / MYSQL_ROOT_PASSWORD / DATABUDDY_DATA_ROOT / DATABUDDY_AES_KEY / PIP_INDEX / APT_MIRROR
+#   APP_PORT / WEB_PORT / MYSQL_PORT / MYSQL_ROOT_PASSWORD / DATABUDDY_DATA_ROOT / DATABUDDY_AES_KEY / PIP_INDEX / APT_MIRROR
 #   compose 侧一律 ${VAR:?} 引用:不留任何默认值,缺失或为空直接报错点名。
 # —— 数据根目录(DooD 关键:宿主路径与容器路径必须是"同一个字符串")——
 #   沙箱容器由应用经挂载的 docker.sock 调【宿主 daemon】创建(docker-out-of-docker),
@@ -63,6 +63,16 @@ services:
       - ${DATABUDDY_DATA_ROOT:?}:${DATABUDDY_DATA_ROOT:?}
     # @PreDestroy 销毁空闲沙箱容器可能超过默认 10s;超时被强杀也无碍(启动时有人兜底清理)
     stop_grace_period: 30s
+
+  # 前端:纯静态页 + nginx 反代同源访问 API(SSE 已关缓冲);零构建
+  web:
+    build: ./frontend
+    image: databuddy-web:latest
+    restart: unless-stopped
+    depends_on:
+      - app
+    ports:
+      - "${WEB_PORT:?}:80"
 
   # 只为构建沙箱镜像而存在的服务(不常驻;仅 --profile sandbox 时调度)
   sandbox-image:

@@ -66,15 +66,33 @@ public class VectorService {
 		log.info("向量写入: agent={}, source={}#{}, chunks={}", agentId, sourceType, sourceId, chunks.size());
 	}
 
-	/** 删除某来源的全部向量(该来源改 / 删时调用) */
+	/** 删除某来源的全部向量(该来源改 / 删时调用);未配嵌入模型时跳过(见 embeddingAvailable 注释) */
 	public void deleteBySource(long agentId, IndexSourceType sourceType, long sourceId) {
+		if (!embeddingAvailable()) {
+			return;
+		}
 		vectorStore.delete(agentFilter(agentId) + " && " + VectorMetadata.SOURCE_TYPE + " == '" + sourceType.name()
 				+ "' && " + VectorMetadata.SOURCE_ID + " == " + sourceId);
 	}
 
-	/** 删除某 agent 的全部向量(删 agent 级联用) */
+	/** 删除某 agent 的全部向量(删 agent 级联用);未配嵌入模型时跳过 */
 	public void deleteByAgent(long agentId) {
+		if (!embeddingAvailable()) {
+			return;
+		}
 		vectorStore.delete(agentFilter(agentId));
+	}
+
+	/**
+	 * 嵌入模型是否可用:未配置时跳过向量清理——SimpleVectorStore 的删除内部也要用嵌入算文档键,硬调会把
+	 * "删文档/术语/绑表/智能体"全堵死;而内存实现下,没有模型就不可能入过向量,跳过等价于空删
+	 */
+	private boolean embeddingAvailable() {
+		if (!StringUtils.hasText(aiModelServiceFactory.getEmbeddingModelName())) {
+			log.warn("未配置 EMBEDDING 模型,跳过向量清理(内存向量库此时必为空)");
+			return false;
+		}
+		return true;
 	}
 
 	/** 按 agent 检索(跨全部来源类型);命中块自带 metadata 与相似度,回源由调用方按 source_type/source_id 完成 */

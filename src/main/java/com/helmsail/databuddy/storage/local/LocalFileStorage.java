@@ -24,7 +24,7 @@ import reactor.core.scheduler.Schedulers;
 @Component
 public class LocalFileStorage implements FileStorage {
 
-	/** 访问路径前缀,由后续下载接口提供对应路由 */
+	/** 访问 URL 前缀(getUrl 生成用;下载入口走 agent 域端点,此形态留待 OSS/CDN 场景) */
 	private static final String URL_PREFIX = "/files/";
 
 	private final StorageProperties properties;
@@ -39,9 +39,9 @@ public class LocalFileStorage implements FileStorage {
 	}
 
 	@Override
-	public Mono<String> store(FilePart filePart, String subPath) {
+	public Mono<String> store(FilePart filePart, String subPath, String filename) {
 		return Mono.defer(() -> {
-			String relative = relativePath(subPath, filePart.filename());
+			String relative = relativePath(subPath, filename);
 			Path target = resolve(relative);
 			return Mono.fromCallable(() -> Files.createDirectories(target.getParent()))
 				.subscribeOn(Schedulers.boundedElastic())

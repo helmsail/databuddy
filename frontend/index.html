@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DataBuddy · 数据分析智能体</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="shell">
+
+  <!-- ===== 左侧导航(深色)===== -->
+  <aside class="side">
+    <div class="side-brand">
+      <span class="logo"></span>
+      <div>
+        <div class="side-brand-name">DataBuddy</div>
+        <div class="side-brand-sub">DATA AGENT</div>
+      </div>
+    </div>
+
+    <div class="side-agent">
+      <div class="side-label">当前选择智能体</div>
+      <div class="agent-switch" id="agent-switch">
+        <span class="agent-switch-name" id="agent-switch-name">加载中…</span>
+        <span class="agent-switch-chev">▾</span>
+        <div class="agent-menu" id="agent-menu" hidden></div>
+      </div>
+    </div>
+
+    <nav class="side-nav" id="side-nav">
+      <button data-route="chat">数据问答</button>
+      <button data-route="prompts">提示词配置</button>
+      <div class="side-group">知识库管理</div>
+      <button data-route="knowledge" class="sub">智能体知识库</button>
+      <div class="side-group">通用设置</div>
+      <button data-route="agents" class="sub">智能体管理</button>
+      <button data-route="datasources" class="sub">数据连接</button>
+      <button data-route="models" class="sub">模型配置</button>
+    </nav>
+
+    <div class="side-foot">
+      <button id="side-new-agent" class="wide">＋ 新建智能体</button>
+    </div>
+  </aside>
+
+  <!-- ===== 主区 ===== -->
+  <div class="main">
+    <header class="topbar">
+      <div class="topbar-title" id="topbar-title">数据问答</div>
+      <div class="spacer"></div>
+      <span class="topbar-chip" id="topbar-model" title="当前激活的对话模型(点击去配置)">模型:—</span>
+    </header>
+    <main id="view" class="view"></main>
+  </div>
+
+</div>
+
+<div id="modal-root"></div>
+<div id="confirm-root"></div>
+<div id="toast" class="toast" hidden></div>
+
+<script src="js/api.js"></script>
+<script src="js/markdown.js"></script>
+<script src="js/store.js"></script>
+<script src="js/chat.js"></script>
+<script src="js/knowledge.js"></script>
+<script src="js/datasources.js"></script>
+<script src="js/manage.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

@@ -18,9 +18,10 @@ public interface FileStorage {
 	 * 存储上传的文件
 	 * @param filePart 上传的文件
 	 * @param subPath 业务子目录,如 "docs",可为空
+	 * @param filename 落盘文件名(调用方显式给定:与业务名一致并防同源覆盖,如文档名)
 	 * @return 存储路径(相对根目录,如 docs/demo.txt)
 	 */
-	Mono<String> store(FilePart filePart, String subPath);
+	Mono<String> store(FilePart filePart, String subPath, String filename);
 
 	/** 删除文件;不存在时静默成功 */
 	void delete(String path);
