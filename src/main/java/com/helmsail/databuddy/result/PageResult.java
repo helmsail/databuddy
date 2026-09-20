@@ -6,6 +6,10 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+/**
+ * 标准分页载荷:分页能力引入时作为 ApiResponse 的 data 形状(约定见 ApiResponse 类注释)。
+ * 当前列表接口均为全量返回,本类为规范定稿保留件
+ */
 @Data
 @NoArgsConstructor
 @AllArgsConstructor

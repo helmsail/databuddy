@@ -4,7 +4,7 @@
 
 -- ============ 表结构 ============
 
--- 节点提示词模板:运行期修改直接改表;升级建议以新 version 插入并激活
+-- 节点提示词模板:管理走 /prompt 接口(新增版本 + 激活)或直接改表;升级建议以新 version 插入并激活
 -- enabled:1 = 激活(NULL = 未激活);唯一索引 (name, enabled) 保证同 name 至多一个激活(多 NULL 不冲突)
 -- 生效版本 = 激活版本(至多一个);均未激活则回退最新版本
 CREATE TABLE IF NOT EXISTS node_prompt_template (

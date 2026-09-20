@@ -1,7 +1,6 @@
 package com.helmsail.databuddy.graph;
 
 import org.springframework.http.MediaType;
-import org.springframework.http.ResponseEntity;
 import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.http.server.reactive.ServerHttpResponse;
 import org.springframework.util.StringUtils;
@@ -15,14 +14,17 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.helmsail.databuddy.exception.BusinessException;
 import com.helmsail.databuddy.exception.ErrorCode;
+import com.helmsail.databuddy.result.ApiResponse;
 
 import lombok.extern.slf4j.Slf4j;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Sinks;
 
 /**
- * 图入口(唯一 Controller):SSE 发起执行,另提供停止与线程记忆清理。
- * 只做 HTTP 层:建 sink、放行可推的帧、断连兜底停止;执行编排全在 GraphService
+ * 图入口(唯一 Controller):SSE 发起执行与恢复,另提供停止与线程记忆清理。
+ * 只做 HTTP 层:建 sink、放行可推的帧、断连兜底停止;执行编排全在 GraphService。
+ * 通道边界:run/resume 为流式端点,流中错误走 error 帧、开流前的 HTTP 错误走全局处理器(信封体);
+ * 其余端点与其他 JSON 端点一致,成功失败均为统一信封(见 ApiResponse)
  */
 @Slf4j
 @RestController
@@ -84,7 +86,7 @@ public class GraphController {
 
 	/** 停止:按运行号或会话号(二选一;都不带则参数错误) */
 	@PostMapping("/stop")
-	public ResponseEntity<Void> stop(@RequestParam(value = "runId", required = false) String runId,
+	public ApiResponse<Void> stop(@RequestParam(value = "runId", required = false) String runId,
 			@RequestParam(value = "sessionId", required = false) String sessionId) {
 		if (StringUtils.hasText(runId)) {
 			graphService.stop(runId);
@@ -95,14 +97,14 @@ public class GraphController {
 		else {
 			throw new BusinessException(ErrorCode.INVALID_INPUT, "停止必须携带 runId 或 sessionId");
 		}
-		return ResponseEntity.noContent().build();
+		return ApiResponse.success();
 	}
 
 	/** 清某线程键下的图侧记忆(客户端编排"删会话"时调用;图不解释该键含义) */
 	@DeleteMapping("/memory")
-	public ResponseEntity<Void> clearMemory(@RequestParam("sessionId") String sessionId) {
+	public ApiResponse<Void> clearMemory(@RequestParam("sessionId") String sessionId) {
 		graphService.clearMemory(sessionId);
-		return ResponseEntity.noContent().build();
+		return ApiResponse.success();
 	}
 
 }
