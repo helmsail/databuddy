@@ -30,6 +30,12 @@ class GraphRun {
 	/** 已播报的过程状态(step 帧去重:同一状态只播一次) */
 	private volatile String lastStep;
 
+	/** 已播报的 SQL(sql 帧去重:同一文本只播一次) */
+	private volatile String lastSql;
+
+	/** 已播报的结果(SQL_RESULT 帧去重) */
+	private volatile String lastResult;
+
 	private volatile Disposable disposable;
 
 	private final AtomicBoolean stopped = new AtomicBoolean(false);
@@ -48,6 +54,14 @@ class GraphRun {
 
 	void setLastStep(String lastStep) {
 		this.lastStep = lastStep;
+	}
+
+	void setLastSql(String lastSql) {
+		this.lastSql = lastSql;
+	}
+
+	void setLastResult(String lastResult) {
+		this.lastResult = lastResult;
 	}
 
 	/** 订阅建立后回填;若期间已被要求停止,立即掐掉 */

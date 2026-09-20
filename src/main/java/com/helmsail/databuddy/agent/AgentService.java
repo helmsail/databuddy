@@ -20,8 +20,10 @@ import com.helmsail.databuddy.agent.biztable.AgentBizTable;
 import com.helmsail.databuddy.agent.biztable.AgentBizTableService;
 import com.helmsail.databuddy.agent.bizterm.AgentBizTerm;
 import com.helmsail.databuddy.agent.bizterm.AgentBizTermService;
+import com.helmsail.databuddy.bizdatabase.BizDatabaseConfig;
 import com.helmsail.databuddy.bizdatabase.BizDatabaseService;
 import com.helmsail.databuddy.bizdatabase.BizTableRelation;
+import com.helmsail.databuddy.bizdatabase.jdbc.config.DbType;
 import com.helmsail.databuddy.exception.BusinessException;
 import com.helmsail.databuddy.exception.ErrorCode;
 import com.helmsail.databuddy.session.SessionService;
@@ -168,6 +170,40 @@ public class AgentService {
 		}
 		log.info("表关系查询: agent={}, 表集 {} 张, 命中关系 {} 条", agentId, names.size(), relations.size());
 		return relations;
+	}
+
+	/** 数据分析目标库:配置 id + 方言文本(图内 SQL 组节点共用:提示词用方言、执行用连接) */
+	public record DatabaseTarget(long configId, String dialect) {
+	}
+
+	/**
+	 * 解析智能体分析目标库:按召回表定位所属库配置(命中表所属库优先;无命中时仅当绑定表同属一库取唯一);
+	 * 判不出返回 null(由节点侧写终止语);零 LLM
+	 */
+	public DatabaseTarget databaseTargetOf(long agentId, Collection<String> tableNames) {
+		requireAgent(agentId);
+		List<AgentBizTable> rows = agentBizTableService.list(agentId);
+		if (rows.isEmpty()) {
+			log.warn("无法判定分析目标库: agent={}, 未绑定任何数据表", agentId);
+			return null;
+		}
+		Set<String> names = tableNames == null || tableNames.isEmpty() ? Set.of() : Set.copyOf(tableNames);
+		AgentBizTable hit = rows.stream().filter(row -> names.contains(row.getTableName())).findFirst().orElse(null);
+		if (hit == null) {
+			Set<Long> configIds = rows.stream().map(AgentBizTable::getDatabaseConfigId).collect(Collectors.toSet());
+			if (configIds.size() != 1) {
+				log.warn("无法判定分析目标库: agent={}, 候选库 {} 个, 召回表均未命中绑定", agentId, configIds.size());
+				return null;
+			}
+			hit = rows.get(0);
+		}
+		BizDatabaseConfig config = bizDatabaseService.getConfig(hit.getDatabaseConfigId());
+		return new DatabaseTarget(config.getId(), dialect(config.getDbType()));
+	}
+
+	/** 库类型 → 提示词用方言名 */
+	private String dialect(DbType dbType) {
+		return dbType == DbType.MYSQL ? "MySQL" : dbType.name();
 	}
 
 	/** 回源补齐:按来源取本行"不在向量里"的字段(QA 答案 / 术语同义词 / 文档名);行已删则空表 */

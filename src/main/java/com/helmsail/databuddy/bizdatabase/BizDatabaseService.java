@@ -1,5 +1,7 @@
 package com.helmsail.databuddy.bizdatabase;
 
+import java.sql.Connection;
+import java.sql.SQLException;
 import java.util.List;
 
 import org.springframework.beans.factory.annotation.Value;
@@ -8,7 +10,9 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import com.helmsail.databuddy.bizdatabase.jdbc.config.DbConfig;
+import com.helmsail.databuddy.bizdatabase.jdbc.executor.SqlQueryExecutor;
 import com.helmsail.databuddy.bizdatabase.jdbc.model.ColumnInfo;
+import com.helmsail.databuddy.bizdatabase.jdbc.model.TableData;
 import com.helmsail.databuddy.bizdatabase.jdbc.model.TableInfo;
 import com.helmsail.databuddy.bizdatabase.jdbc.operations.DatabaseOperationsFactory;
 import com.helmsail.databuddy.bizdatabase.jdbc.pool.JdbcConnectionPoolFactory;
@@ -98,6 +102,22 @@ public class BizDatabaseService {
 	public List<ColumnInfo> listColumns(Long configId, String table) {
 		BizDatabaseConfig config = requireConfig(configId);
 		return operationsFactory.get(config.getDbType()).listColumns(toDbConfig(config), table);
+	}
+
+	/** 取配置行(不存在抛 404;图内节点解析目标库元信息用) */
+	public BizDatabaseConfig getConfig(Long id) {
+		return requireConfig(id);
+	}
+
+	/** 执行只读查询(限行 1000 / 超时 30s 由 SqlQueryExecutor 统一施加);供图内 SQL 执行节点用 */
+	public TableData executeQuery(Long configId, String sql) {
+		BizDatabaseConfig config = requireConfig(configId);
+		try (Connection connection = poolFactory.get(toDbConfig(config)).getConnection()) {
+			return SqlQueryExecutor.queryTableData(connection, sql);
+		}
+		catch (SQLException e) {
+			throw new BusinessException(ErrorCode.SYSTEM_ERROR, "SQL 执行失败: " + e.getMessage(), e);
+		}
 	}
 
 	/** 配置行 → 运行层 DbConfig(密码解密);内部用于换池与连通探测 */

@@ -1,9 +1,11 @@
 package com.helmsail.databuddy.graph.util;
 
+import java.util.List;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import com.alibaba.cloud.ai.graph.OverAllState;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.helmsail.databuddy.prompt.NodePromptTemplate;
@@ -62,14 +64,23 @@ public final class NodeUtils {
 		return trimmed.length() <= 200 ? trimmed : trimmed.substring(0, 200) + "...";
 	}
 
+	/** 读状态里的字符串列表(缺失/类型不符返回空表;节点侧防御性取值共用) */
+	public static List<String> stringList(OverAllState state, String key) {
+		Object raw = state.value(key).orElse(null);
+		if (raw instanceof List<?> list) {
+			return list.stream().map(String::valueOf).toList();
+		}
+		return List.of();
+	}
+
 	/** 从表块内容解析表名(首行约定;解析不到返回 null) */
 	public static String parseTableName(String content) {
 		Matcher matcher = TABLE_HEAD.matcher(content == null ? "" : content);
 		return matcher.find() ? matcher.group(1) : null;
 	}
 
-	/** 剥掉可能存在的 ```json 代码围栏 */
-	private static String stripFence(String output) {
+	/** 剥掉可能存在的 ```json 代码围栏(节点侧提取代码/JSON 文本共用) */
+	public static String stripFence(String output) {
 		Matcher matcher = FENCE.matcher(output == null ? "" : output);
 		return matcher.find() ? matcher.group(1) : (output == null ? "" : output.trim());
 	}

@@ -36,15 +36,33 @@ public class GraphController {
 		this.graphService = graphService;
 	}
 
-	/** 执行入口(SSE):GET /graph/run?agentId=…&input=…&sessionId=…(会话号可空,生成后随事件回传) */
+	/** 执行入口(SSE):GET /graph/run?agentId=…&input=…&sessionId=…&humanReview=false(会话号可空,生成后随事件回传) */
 	@GetMapping(value = "/run", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
 	public Flux<ServerSentEvent<GraphSseChunk>> run(@RequestParam("agentId") long agentId,
 			@RequestParam("input") String input,
 			@RequestParam(value = "sessionId", required = false) String sessionId,
+			@RequestParam(value = "humanReview", required = false, defaultValue = "false") boolean humanReview,
 			ServerHttpResponse response) {
 		response.getHeaders().add("Cache-Control", "no-cache"); // SSE 不缓存
 		Sinks.Many<ServerSentEvent<GraphSseChunk>> sink = Sinks.many().unicast().onBackpressureBuffer();
-		String runId = graphService.stream(sink, agentId, input, sessionId);
+		String runId = graphService.stream(sink, agentId, input, sessionId, humanReview);
+		return wire(sink, runId);
+	}
+
+	/** 恢复入口(SSE):GET /graph/resume?runId=…&approved=true|false&feedback=…(挂起轮的人工确认;新流接上断点续跑) */
+	@GetMapping(value = "/resume", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+	public Flux<ServerSentEvent<GraphSseChunk>> resume(@RequestParam("runId") String runId,
+			@RequestParam("approved") boolean approved,
+			@RequestParam(value = "feedback", required = false) String feedback,
+			ServerHttpResponse response) {
+		response.getHeaders().add("Cache-Control", "no-cache");
+		Sinks.Many<ServerSentEvent<GraphSseChunk>> sink = Sinks.many().unicast().onBackpressureBuffer();
+		graphService.resume(sink, runId, approved, feedback);
+		return wire(sink, runId);
+	}
+
+	/** SSE 管道公共接线:帧过滤(文本帧空文本不推,SQL 帧可重复推送)+ 断连/出错兜底停止 */
+	private Flux<ServerSentEvent<GraphSseChunk>> wire(Sinks.Many<ServerSentEvent<GraphSseChunk>> sink, String runId) {
 		return sink.asFlux()
 			// 只放行"有文本的文本帧"与协议帧
 			.filter(sse -> {
