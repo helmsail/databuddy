@@ -1,7 +1,5 @@
 package com.helmsail.databuddy.bizdatabase;
 
-import java.sql.Connection;
-import java.sql.SQLException;
 import java.util.List;
 
 import org.springframework.beans.factory.annotation.Value;
@@ -10,11 +8,10 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import com.helmsail.databuddy.bizdatabase.jdbc.config.DbConfig;
-import com.helmsail.databuddy.bizdatabase.jdbc.executor.SqlQueryExecutor;
 import com.helmsail.databuddy.bizdatabase.jdbc.model.ColumnInfo;
 import com.helmsail.databuddy.bizdatabase.jdbc.model.TableData;
 import com.helmsail.databuddy.bizdatabase.jdbc.model.TableInfo;
-import com.helmsail.databuddy.bizdatabase.jdbc.operations.DatabaseOperationsFactory;
+import com.helmsail.databuddy.bizdatabase.jdbc.operations.DatabaseOperations;
 import com.helmsail.databuddy.bizdatabase.jdbc.pool.JdbcConnectionPoolFactory;
 import com.helmsail.databuddy.crypto.AesUtil;
 import com.helmsail.databuddy.exception.BusinessException;
@@ -38,18 +35,18 @@ public class BizDatabaseService {
 
 	private final JdbcConnectionPoolFactory poolFactory;
 
-	private final DatabaseOperationsFactory operationsFactory;
+	private final DatabaseOperations databaseOperations;
 
 	/** 落库加密密钥(AES-256-GCM,Base64 32 字节;配置项 databuddy.crypto.aes-key) */
 	private final String aesKey;
 
 	public BizDatabaseService(BizDatabaseConfigMapper configMapper, BizTableRelationMapper relationMapper,
-			JdbcConnectionPoolFactory poolFactory, DatabaseOperationsFactory operationsFactory,
+			JdbcConnectionPoolFactory poolFactory, DatabaseOperations databaseOperations,
 			@Value("${databuddy.crypto.aes-key}") String aesKey) {
 		this.configMapper = configMapper;
 		this.relationMapper = relationMapper;
 		this.poolFactory = poolFactory;
-		this.operationsFactory = operationsFactory;
+		this.databaseOperations = databaseOperations;
 		this.aesKey = aesKey;
 	}
 
@@ -95,13 +92,13 @@ public class BizDatabaseService {
 	/** 某库的表清单(直连实时查询;关系编辑器与 agent 选表共用) */
 	public List<TableInfo> listTables(Long configId) {
 		BizDatabaseConfig config = requireConfig(configId);
-		return operationsFactory.get(config.getDbType()).listTables(toDbConfig(config));
+		return databaseOperations.listTables(toDbConfig(config));
 	}
 
 	/** 某表的结构(直连实时查询) */
 	public List<ColumnInfo> listColumns(Long configId, String table) {
 		BizDatabaseConfig config = requireConfig(configId);
-		return operationsFactory.get(config.getDbType()).listColumns(toDbConfig(config), table);
+		return databaseOperations.listColumns(toDbConfig(config), table);
 	}
 
 	/** 取配置行(不存在抛 404;图内节点解析目标库元信息用) */
@@ -109,15 +106,10 @@ public class BizDatabaseService {
 		return requireConfig(id);
 	}
 
-	/** 执行只读查询(限行 1000 / 超时 30s 由 SqlQueryExecutor 统一施加);供图内 SQL 执行节点用 */
+	/** 执行只读查询(限行/超时由执行器统一施加);供图内 SQL 执行节点用 */
 	public TableData executeQuery(Long configId, String sql) {
 		BizDatabaseConfig config = requireConfig(configId);
-		try (Connection connection = poolFactory.get(toDbConfig(config)).getConnection()) {
-			return SqlQueryExecutor.queryTableData(connection, sql);
-		}
-		catch (SQLException e) {
-			throw new BusinessException(ErrorCode.SYSTEM_ERROR, "SQL 执行失败: " + e.getMessage(), e);
-		}
+		return databaseOperations.executeSql(toDbConfig(config), sql);
 	}
 
 	/** 配置行 → 运行层 DbConfig(密码解密);内部用于换池与连通探测 */
