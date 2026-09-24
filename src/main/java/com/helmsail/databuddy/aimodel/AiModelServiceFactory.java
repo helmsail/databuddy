@@ -130,15 +130,6 @@ public class AiModelServiceFactory {
 		if (config.getTopP() != null) {
 			options.topP(config.getTopP());
 		}
-		if (config.getFrequencyPenalty() != null) {
-			options.frequencyPenalty(config.getFrequencyPenalty());
-		}
-		if (config.getPresencePenalty() != null) {
-			options.presencePenalty(config.getPresencePenalty());
-		}
-		if (config.getSeed() != null) {
-			options.seed(config.getSeed());
-		}
 		ChatModel chatModel = OpenAiChatModel.builder()
 			.openAiApi(buildApi(config))
 			.defaultOptions(options.build())
@@ -165,20 +156,28 @@ public class AiModelServiceFactory {
 	 * 受默认读超时约束会在中途抛 ReadTimeoutException(已实测),放大后覆盖长生成场景
 	 */
 	private OpenAiApi buildApi(AiModelConfig config) {
+		return buildApi(config, Duration.ofSeconds(300));
+	}
+
+	/**
+	 * 按指定响应超时构建通讯对象:包内共享(Service 的连通性测试复用同一套连接配置,仅超时更短以快速失败);
+	 * baseUrl/apiKey 处理与生效实例完全一致,保证"测试通过"对生效构建有参考意义
+	 */
+	OpenAiApi buildApi(AiModelConfig config, Duration responseTimeout) {
 		String apiKey = StringUtils.hasText(config.getApiKey()) ? config.getApiKey() : "";
 		return OpenAiApi.builder()
 			.baseUrl(config.getBaseUrl())
 			.apiKey(apiKey)
-			.restClientBuilder(RestClient.builder().requestFactory(new ReactorClientHttpRequestFactory(httpClient())))
-			.webClientBuilder(WebClient.builder().clientConnector(new ReactorClientHttpConnector(httpClient())))
+			.restClientBuilder(RestClient.builder().requestFactory(new ReactorClientHttpRequestFactory(httpClient(responseTimeout))))
+			.webClientBuilder(WebClient.builder().clientConnector(new ReactorClientHttpConnector(httpClient(responseTimeout))))
 			.build();
 	}
 
 	/** 模型调用 HTTP 客户端(每个连接器独立实例:内部持有各自连接池状态) */
-	private static HttpClient httpClient() {
+	private static HttpClient httpClient(Duration responseTimeout) {
 		return HttpClient.create()
 			.option(ChannelOption.CONNECT_TIMEOUT_MILLIS, 10_000)
-			.responseTimeout(Duration.ofSeconds(300));
+			.responseTimeout(responseTimeout);
 	}
 
 }

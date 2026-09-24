@@ -34,6 +34,7 @@ build/
 
 ### 本地文档(不提交) ###
 /docs/dataagent-diff.md
+/docs/project-intro.md
 
 ### 运行时数据(宿主侧:文档存储/沙箱工作目录;compose 数据根,不提交) ###
 /data/

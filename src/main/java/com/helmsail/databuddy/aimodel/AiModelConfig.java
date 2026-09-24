@@ -35,15 +35,6 @@ public class AiModelConfig {
 	/** 核采样阈值(可空,0~1;与温度同类旋钮,一般只调其一) */
 	private Double topP;
 
-	/** 频率惩罚(可空,压低复读:出现次数越多扣分越重) */
-	private Double frequencyPenalty;
-
-	/** 存在惩罚(可空,鼓励新话题) */
-	private Double presencePenalty;
-
-	/** 随机种子(可空,固定后输出尽量可复现) */
-	private Integer seed;
-
 	/** 激活标记:true = 激活;null = 未激活(不落 0) */
 	private Boolean isActive;
 

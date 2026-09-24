@@ -1,6 +1,6 @@
 /* ============================================================
  * manage.js —— 智能体管理 / 模型配置 / 提示词配置 三个管理页
- * 对应 /agent(CRUD)、/aimodel/configs(list|save|activate)、
+ * 对应 /agent(CRUD)、/aimodel/configs(list|save|activate|deactivate|test)、
  * /prompt/templates(list|save|activate|effective)
  * ============================================================ */
 
@@ -146,7 +146,6 @@ function renderModelList() {
     if (m.temperature != null) parts.push('temp=' + m.temperature);
     if (m.maxTokens != null) parts.push('maxTokens=' + m.maxTokens);
     if (m.topP != null) parts.push('topP=' + m.topP);
-    if (m.seed != null) parts.push('seed=' + m.seed);
     return parts.join(' · ') || '按服务默认';
   };
   box.innerHTML = `
@@ -164,8 +163,9 @@ function renderModelList() {
             <td class="dim small">${esc(paramSummary(m))}</td>
             <td>${m.isActive ? '<span class="chip green"><span class="dot"></span>已激活</span>' : '<span class="chip">未激活</span>'}</td>
             <td><div class="actions">
-              ${m.isActive ? '' : `<button class="btn link" data-act="${m.id}">激活(即时生效)</button>`}
-              <button class="btn link" data-medit="${m.id}">编辑</button>
+              ${m.isActive ? `<button class="btn link" data-mdeact="${m.modelType}">失活</button>` : `<button class="btn link" data-act="${m.id}">激活(即时生效)</button>`}
+              <button class="btn link" data-mtest="${m.id}" data-name="${esc(m.modelName)}">测试</button>
+              <button class="btn link" data-mcopy="${m.id}">复制新建</button>
               <button class="btn link danger" data-mdel="${m.id}" data-name="${esc(m.modelName)}" data-active="${m.isActive ? '1' : ''}">删除</button>
             </div></td>
           </tr>`
@@ -190,8 +190,46 @@ function renderModelList() {
       }
     };
   });
-  $$('[data-medit]').forEach((b) => {
-    const row = store.models.find((x) => String(x.id) === b.dataset.medit);
+  $$('[data-mdeact]').forEach((b) => {
+    b.onclick = () => {
+      const type = b.dataset.mdeact;
+      confirmBox({
+        title: '失活模型配置',
+        message: `失活后 ${type} 类型将无可用模型,聊天/向量化相关功能不可用(配置保留,可随时重新激活)。确认失活?`,
+        confirmText: '失活',
+        danger: true,
+        onConfirm: async () => {
+          try {
+            await api('POST', `/aimodel/configs/deactivate?type=${encodeURIComponent(type)}`);
+            await loadModels();
+            renderModelList();
+            refreshAgentUI();
+            toast('已失活,该类型暂无可用模型');
+          } catch (e) {
+            toast(e.message, true);
+          }
+        },
+      });
+    };
+  });
+  $$('[data-mtest]').forEach((b) => {
+    b.onclick = async () => {
+      b.disabled = true;
+      const old = b.textContent;
+      b.textContent = '测试中…';
+      try {
+        await api('POST', `/aimodel/configs/${b.dataset.mtest}/test`);
+        toast(`「${b.dataset.name}」连接测试成功,模型可用`);
+      } catch (e) {
+        toast('连接测试失败:' + e.message, true);
+      } finally {
+        b.disabled = false;
+        b.textContent = old;
+      }
+    };
+  });
+  $$('[data-mcopy]').forEach((b) => {
+    const row = store.models.find((x) => String(x.id) === b.dataset.mcopy);
     b.onclick = () => showModelModal(row);
   });
   $$('[data-mdel]').forEach((b) => {
@@ -220,36 +258,32 @@ function renderModelList() {
   });
 }
 
-function showModelModal(row) {
-  const isEdit = !!row;
+function showModelModal(prefill) {
   const v = (x) => (x != null ? x : '');
   openModal({
-    title: isEdit ? '编辑模型配置' : '添加模型配置',
+    title: prefill ? '复制新建模型配置' : '添加模型配置',
     body: `
       <div class="form-grid">
-        <div class="field"><label>类型${isEdit ? '(创建后不可修改)' : ' *'}</label>
-          <select id="mm-type" ${isEdit ? 'disabled' : ''}>
-            <option value="CHAT" ${row && row.modelType === 'CHAT' ? 'selected' : ''}>CHAT(对话)</option>
-            <option value="EMBEDDING" ${row && row.modelType === 'EMBEDDING' ? 'selected' : ''}>EMBEDDING(向量)</option>
+        <div class="field"><label>类型 <span class="req">*</span></label>
+          <select id="mm-type">
+            <option value="CHAT" ${prefill && prefill.modelType === 'CHAT' ? 'selected' : ''}>CHAT(对话)</option>
+            <option value="EMBEDDING" ${prefill && prefill.modelType === 'EMBEDDING' ? 'selected' : ''}>EMBEDDING(向量)</option>
           </select></div>
         <div class="field"><label>模型名 <span class="req">*</span></label>
-          <input id="mm-name" value="${esc(row ? row.modelName : '')}" placeholder="如:deepseek-chat / text-embedding-v3"></div>
+          <input id="mm-name" value="${prefill ? esc(prefill.modelName) : ''}" placeholder="如:deepseek-chat / text-embedding-v3"></div>
         <div class="field" style="grid-column:1/-1"><label>服务地址(baseUrl) <span class="req">*</span></label>
-          <input id="mm-url" value="${esc(row ? row.baseUrl : '')}" placeholder="如:https://api.deepseek.com">
+          <input id="mm-url" value="${prefill ? esc(prefill.baseUrl) : ''}" placeholder="如:https://api.deepseek.com">
           <span class="dim small">不要以 /v1 结尾:系统会自动拼接 /v1/chat/completions 与 /v1/embeddings(带了会拼出 /v1/v1 报 404)</span></div>
-        <div class="field" style="grid-column:1/-1"><label>API Key${isEdit ? '(留空 = 不修改)' : '(本地无鉴权可空)'}</label>
-          <input id="mm-key" placeholder="${isEdit ? '留空保持原密钥' : 'sk-…'}"></div>
+        <div class="field" style="grid-column:1/-1"><label>API Key${prefill ? '(复制不携带密钥,请重新填写)' : '(本地无鉴权可空)'}</label>
+          <input id="mm-key" placeholder="sk-…"></div>
       </div>
       <div class="dim small" style="margin:14px 0 6px">高级参数(可空,按服务默认)</div>
       <div class="form-grid">
-        <div class="field"><label>temperature</label><input id="mm-temp" type="number" step="0.1" min="0" max="2" value="${v(row && row.temperature)}"></div>
-        <div class="field"><label>maxTokens</label><input id="mm-maxtok" type="number" min="1" value="${v(row && row.maxTokens)}"></div>
-        <div class="field"><label>topP</label><input id="mm-topp" type="number" step="0.1" min="0" max="1" value="${v(row && row.topP)}"></div>
-        <div class="field"><label>frequencyPenalty</label><input id="mm-fp" type="number" step="0.1" value="${v(row && row.frequencyPenalty)}"></div>
-        <div class="field"><label>presencePenalty</label><input id="mm-pp" type="number" step="0.1" value="${v(row && row.presencePenalty)}"></div>
-        <div class="field"><label>seed</label><input id="mm-seed" type="number" value="${v(row && row.seed)}"></div>
+        <div class="field"><label>temperature</label><input id="mm-temp" type="number" step="0.1" min="0" max="2" value="${v(prefill && prefill.temperature)}"></div>
+        <div class="field"><label>maxTokens</label><input id="mm-maxtok" type="number" min="1" value="${v(prefill && prefill.maxTokens)}"></div>
+        <div class="field"><label>topP</label><input id="mm-topp" type="number" step="0.1" min="0" max="1" value="${v(prefill && prefill.topP)}"></div>
       </div>`,
-    footer: `<button class="btn secondary" type="button" data-cancel>取消</button><button class="btn" type="button" data-ok>${isEdit ? '保存修改(激活行即时生效)' : '保存(默认未激活)'}</button>`,
+    footer: `<button class="btn secondary" type="button" data-cancel>取消</button><button class="btn" type="button" data-ok>保存(默认未激活)</button>`,
     onMount: (bodyEl, footEl, close) => {
       $('[data-cancel]', footEl).onclick = close;
       $('[data-ok]', footEl).onclick = async () => {
@@ -258,26 +292,18 @@ function showModelModal(row) {
           return val === '' ? undefined : Number(val);
         };
         const payload = {
-          modelType: isEdit ? row.modelType : $('#mm-type', bodyEl).value,
+          modelType: $('#mm-type', bodyEl).value,
           modelName: $('#mm-name', bodyEl).value.trim(),
           baseUrl: $('#mm-url', bodyEl).value.trim(),
           apiKey: $('#mm-key', bodyEl).value.trim(),
           temperature: num('mm-temp'),
           maxTokens: num('mm-maxtok'),
           topP: num('mm-topp'),
-          frequencyPenalty: num('mm-fp'),
-          presencePenalty: num('mm-pp'),
-          seed: num('mm-seed'),
         };
         if (!payload.modelName || !payload.baseUrl) return toast('模型名与服务地址必填', true);
         try {
-          if (isEdit) {
-            await api('POST', '/aimodel/configs/' + row.id, payload);
-            toast('已保存修改(如为激活行已即时生效)');
-          } else {
-            await api('POST', '/aimodel/configs', payload);
-            toast('已保存(未激活;去列表点「激活」)');
-          }
+          await api('POST', '/aimodel/configs', payload);
+          toast('已保存(未激活;去列表点「激活」)');
           close();
           await loadModels();
           renderModelList();
