@@ -1,8 +1,8 @@
 /* ============================================================
  * chat.js —— 数据问答页:会话管理(客户端编排)+ SSE 流式渲染
  * 时间线(步骤/SQL/结果/计划)+ 报告卡(markdown)+ 计划确认(挂起恢复)
- * 消息持久化:assistant 存一条 messageType='timeline',
- * content = {"blocks":[…], "report": "markdown"}
+ * 消息持久化(类型闭集 text/timeline/warning/error):assistant 正常存一条 timeline
+ * (content = {"blocks":[…], "report": …});纯错误存 error;用户停止补一条 warning;user 消息类型走服务端缺省(text)
  * ============================================================ */
 
 const chatState = {
@@ -11,14 +11,13 @@ const chatState = {
   messages: [],
   busy: false,
   es: null,
-  runId: null,
   blocks: [],
   planText: '',
   finalText: '',
-  pendingRunId: null,
+  pendingPlan: false,
   streamErr: null,
   sawFrame: false,
-  humanReview: false,
+  planReview: false,
   showSqlResults: true,
 };
 
@@ -36,11 +35,10 @@ async function mountChat(view) {
     sessions: [],
     messages: [],
     busy: false,
-    runId: null,
     blocks: [],
     planText: '',
     finalText: '',
-    pendingRunId: null,
+    pendingPlan: false,
     streamErr: null,
   });
 
@@ -116,7 +114,7 @@ async function createChatSession() {
     const s = await api('POST', '/session?agentId=' + agent.id);
     chatState.sessionId = s.id;
     chatState.messages = [];
-    chatState.pendingRunId = null;
+    chatState.pendingPlan = false;
     chatState.planText = '';
     renderSessions();
     renderMessages();
@@ -130,7 +128,7 @@ async function createChatSession() {
 async function openChatSession(id) {
   if (chatState.busy) return toast('任务进行中,先停止再切换会话', true);
   chatState.sessionId = id;
-  chatState.pendingRunId = null;
+  chatState.pendingPlan = false;
   chatState.planText = '';
   renderSessions();
   renderFeedbackPanel();
@@ -151,8 +149,8 @@ function removeChatSession(id) {
     danger: true,
     onConfirm: async () => {
       try {
-        await api('POST', '/graph/stop?sessionId=' + encodeURIComponent(id)).catch(() => {});
-        await api('DELETE', '/graph/memory?sessionId=' + encodeURIComponent(id)).catch(() => {});
+        await api('POST', '/graph/stop/' + encodeURIComponent(id)).catch(() => {});
+        await api('DELETE', '/graph/memory/' + encodeURIComponent(id)).catch(() => {});
         await api('DELETE', '/session/' + id);
         if (chatState.sessionId === id) {
           chatState.sessionId = null;
@@ -252,7 +250,7 @@ function renderBlocks(blocks, done) {
         body = chatState.showSqlResults ? `<div class="wtl-body">${renderResultSet(b.text)}</div>` : '';
       } else if (b.type === 'plan') {
         label = '<div class="wtl-label">执行计划</div>';
-        body = `<div class="wtl-body">${renderPlanCard(b.text, isActive && !!chatState.pendingRunId)}</div>`;
+        body = `<div class="wtl-body">${renderPlanCard(b.text, isActive && chatState.pendingPlan)}</div>`;
       }
       return `<div class="wtl-item ${dotCls}"><span class="wtl-dot ${dotCls}">${dot}</span>${label}${body}</div>`;
     })
@@ -366,7 +364,6 @@ function startChatStream(url) {
   closeChatStream();
   chatState.busy = true;
   chatState.sawFrame = false;
-  chatState.runId = null;
   chatState.blocks = [];
   chatState.finalText = '';
   chatState.streamErr = null;
@@ -384,7 +381,6 @@ function startChatStream(url) {
       } catch {
         c = { text: e.data };
       }
-      chatState.runId = c.runId || chatState.runId;
       fn(c);
     });
 
@@ -402,7 +398,7 @@ function startChatStream(url) {
   });
   on('plan', (c) => {
     chatState.planText = c.text || '';
-    chatState.pendingRunId = chatState.runId;
+    chatState.pendingPlan = true;
     chatState.blocks.push({ type: 'plan', text: chatState.planText });
     renderFeedbackPanel();
     renderStreaming();
@@ -482,8 +478,8 @@ function renderComposer() {
     <textarea id="chat-input" rows="3" placeholder="在这里提问,例如:各渠道的订单总额和客单价对比(Enter 发送,Shift+Enter 换行)"></textarea>
     <div class="composer-foot">
       <div class="opt-chips">
-        <label class="opt-chip ${chatState.humanReview ? 'active' : ''}" id="opt-review">
-          <input type="checkbox" ${chatState.humanReview ? 'checked' : ''}> 人工确认计划
+        <label class="opt-chip ${chatState.planReview ? 'active' : ''}" id="opt-review">
+          <input type="checkbox" ${chatState.planReview ? 'checked' : ''}> 人工确认计划
         </label>
         <label class="opt-chip ${chatState.showSqlResults ? 'active' : ''}" id="opt-sqlresults">
           <input type="checkbox" ${chatState.showSqlResults ? 'checked' : ''}> 显示 SQL 结果
@@ -504,10 +500,10 @@ function renderComposer() {
     }
   });
   $('#opt-review').onclick = () => {
-    chatState.humanReview = !chatState.humanReview;
-    $('#opt-review').classList.toggle('active', chatState.humanReview);
-    $('#opt-review input').checked = chatState.humanReview;
-    if (chatState.humanReview) toast('已开启人工确认:计划生成后将挂起等待你确认');
+    chatState.planReview = !chatState.planReview;
+    $('#opt-review').classList.toggle('active', chatState.planReview);
+    $('#opt-review input').checked = chatState.planReview;
+    if (chatState.planReview) toast('已开启人工确认:计划生成后将挂起等待你确认');
   };
   $('#opt-sqlresults').onclick = () => {
     chatState.showSqlResults = !chatState.showSqlResults;
@@ -597,7 +593,7 @@ function toggleComposerBusy(busy) {
 function renderFeedbackPanel() {
   const panel = $('#fb-panel');
   if (!panel) return;
-  const show = !!chatState.pendingRunId && !chatState.busy;
+  const show = chatState.pendingPlan && !chatState.busy;
   panel.hidden = !show;
 }
 
@@ -607,7 +603,7 @@ async function sendChat() {
   if (!text || chatState.busy) return;
   const agent = activeAgent();
   if (!agent) return toast('先在左侧选择智能体', true);
-  if (chatState.pendingRunId) return toast('有计划待确认,请先接受或拒绝', true);
+  if (chatState.pendingPlan) return toast('有计划待确认,请先接受或拒绝', true);
   if (!chatState.sessionId) {
     await createChatSession();
     if (!chatState.sessionId) return;
@@ -616,18 +612,17 @@ async function sendChat() {
     await api('POST', `/session/${chatState.sessionId}/messages`, {
       role: 'USER',
       content: text,
-      messageType: 'text',
     });
   } catch (e) {
     toast(e.message, true);
   }
-  chatState.messages.push({ role: 'USER', content: text, messageType: 'text' });
+  chatState.messages.push({ role: 'USER', content: text });
   input.value = '';
   renderMessages();
   startChatStream(
     `/graph/run?agentId=${agent.id}&input=${encodeURIComponent(text)}&sessionId=${encodeURIComponent(
       chatState.sessionId
-    )}&humanReview=${chatState.humanReview}`
+    )}&planReview=${chatState.planReview}`
   );
 }
 
@@ -635,20 +630,29 @@ function resumeChatPlan(approved) {
   const fb = ($('#fb-input') || {}).value || '';
   const feedback = fb.trim();
   if (!approved && !feedback) return toast('拒绝并重规划时请填写修改意见', true);
-  const runId = chatState.pendingRunId;
-  if (!runId) return toast('缺少运行号(runId)', true);
-  chatState.pendingRunId = null;
+  if (!chatState.pendingPlan) return toast('没有待确认的计划', true);
+  chatState.pendingPlan = false;
   chatState.planText = '';
   renderFeedbackPanel();
   startChatStream(
-    `/graph/resume?runId=${encodeURIComponent(runId)}&approved=${approved}&feedback=${encodeURIComponent(feedback)}`
+    `/graph/resume?sessionId=${encodeURIComponent(chatState.sessionId)}&approved=${approved}&feedback=${encodeURIComponent(feedback)}`
   );
 }
 
 function stopChat() {
-  const rid = chatState.runId;
   closeChatStream();
   finishChatStream();
-  if (rid) api('POST', '/graph/stop?runId=' + encodeURIComponent(rid)).catch(() => {});
+  if (chatState.sessionId) api('POST', '/graph/stop/' + encodeURIComponent(chatState.sessionId)).catch(() => {});
+  // 历史留一笔"已终止"警示(warning 渲染分支此前有读无写)
+  if (chatState.sessionId) {
+    const content = '用户已终止本次执行。';
+    api('POST', `/session/${chatState.sessionId}/messages`, {
+      role: 'ASSISTANT',
+      content,
+      messageType: 'warning',
+    }).catch(() => {});
+    chatState.messages.push({ role: 'ASSISTANT', content, messageType: 'warning' });
+    renderMessages();
+  }
   toast('已停止');
 }

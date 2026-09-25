@@ -9,15 +9,14 @@ import reactor.core.Disposable;
 import reactor.core.publisher.Sinks;
 
 /**
- * 一次执行的现场(运行表的值):输出口 sink、要掐的订阅 disposable、
- * agentId/输入与最终回复、停止旗标——都收在这一个对象里,只在"运行期间"存在
+ * 一次执行的现场(运行表的值,键 = 线程键 threadId):输出口 sink、要掐的订阅 disposable、
+ * agentId/输入与最终回复、停止旗标——都收在这一个对象里,只在"运行期间"存在。
+ * 一线程一会话:threadId 的值即会话键(对外帧与 HTTP 仍用 sessionId 这一业务词)
  */
 @Getter
 class GraphRun {
 
-	private final String runId;
-
-	private final String sessionId;
+	private final String threadId;
 
 	private final long agentId;
 
@@ -40,9 +39,8 @@ class GraphRun {
 
 	private final AtomicBoolean stopped = new AtomicBoolean(false);
 
-	GraphRun(String runId, String sessionId, long agentId, String input, Sinks.Many<ServerSentEvent<GraphSseChunk>> sink) {
-		this.runId = runId;
-		this.sessionId = sessionId;
+	GraphRun(String threadId, long agentId, String input, Sinks.Many<ServerSentEvent<GraphSseChunk>> sink) {
+		this.threadId = threadId;
 		this.agentId = agentId;
 		this.input = input;
 		this.sink = sink;

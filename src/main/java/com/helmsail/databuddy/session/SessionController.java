@@ -17,7 +17,7 @@ import com.helmsail.databuddy.result.ApiResponse;
 /**
  * 会话入口(用户侧历史,纯 CRUD,不认识图)。
  * 编排在客户端:发问 = 存 user 消息 → 跑图 → 收尾存 assistant 消息;
- * 删会话 = 先 POST /graph/stop 再 DELETE /graph/memory,最后删本域(先停运行,再清两边);
+ * 删会话 = 先 POST /graph/stop/{sessionId} 再 DELETE /graph/memory/{sessionId},最后删本域(先停运行,再清两边);
  * 成功失败均为统一信封(见 ApiResponse)
  */
 @RestController
@@ -57,7 +57,7 @@ public class SessionController {
 		return ApiResponse.success(sessionService.saveMessage(sessionId, message));
 	}
 
-	/** 删会话(硬删:消息 + 会话行;图侧清理由客户端先调 /graph/stop 与 /graph/memory) */
+	/** 删会话(硬删:消息 + 会话行;图侧清理由客户端先调 /graph/stop/{sessionId} 与 /graph/memory/{sessionId}) */
 	@DeleteMapping("/{sessionId}")
 	public ApiResponse<Void> delete(@PathVariable("sessionId") String sessionId) {
 		sessionService.delete(sessionId);

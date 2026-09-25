@@ -15,12 +15,6 @@ public final class VectorMetadata {
 	/** 来源行主键 */
 	public static final String SOURCE_ID = "source_id";
 
-	/** 分块序号(重建与调试用) */
-	public static final String CHUNK_INDEX = "chunk_index";
-
-	/** 写入时的嵌入模型名(模型切换后判断是否需要重建) */
-	public static final String EMBEDDING_MODEL = "embedding_model";
-
 	private VectorMetadata() {
 	}
 

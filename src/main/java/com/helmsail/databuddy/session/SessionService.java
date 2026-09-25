@@ -24,6 +24,7 @@ public class SessionService {
 	/** 标题长度上限(首条消息自动截取) */
 	private static final int TITLE_MAX = 20;
 
+	/** 缺省消息类型:纯文本(客户端不再显式传 user 消息类型) */
 	private static final String DEFAULT_MESSAGE_TYPE = "text";
 
 	private final SessionMapper sessionMapper;

@@ -5,39 +5,44 @@ import java.util.List;
 import org.apache.ibatis.annotations.Delete;
 import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Mapper;
-import org.apache.ibatis.annotations.Options;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
+import org.apache.ibatis.annotations.Update;
 
 /**
- * 会话记忆 Mapper(系统库 session_memory 表):存储读写的唯一落点,业务语义在 SessionMemoryService
+ * 会话记忆 Mapper(session_memory 表,系统库):一行 = 一条消息,由全自研实现
+ * SummarizingChatMemory 读写;SUMMARY 行为窗口外压缩(每会话至多一行,原地滚动覆盖)
  */
 @Mapper
 public interface SessionMemoryMapper {
 
-	/** 插入一条记忆条目(原文轮 / 压缩条目通用);回填自增 id */
-	@Options(useGeneratedKeys = true, keyProperty = "id")
-	@Insert("INSERT INTO session_memory (session_id, kind, question, answer) VALUES (#{sessionId}, #{kind}, #{question}, #{answer})")
-	void insert(SessionMemory entry);
+	/** 窗口消息(不含摘要,按写入顺序) */
+	@Select("SELECT id, message_type, content FROM session_memory "
+			+ "WHERE conversation_id = #{conversationId} AND message_type != 'SUMMARY' ORDER BY id ASC")
+	List<SessionMemory> selectMessages(@Param("conversationId") String conversationId);
 
-	/** 最近 limit 条原文轮(id 倒序) */
-	@Select("SELECT id, session_id, kind, question, answer, create_time FROM session_memory WHERE session_id = #{sessionId} AND kind = 'turn' ORDER BY id DESC LIMIT #{limit}")
-	List<SessionMemory> selectRecentTurns(@Param("sessionId") String sessionId, @Param("limit") int limit);
+	/** 最新摘要;无则 null */
+	@Select("SELECT content FROM session_memory "
+			+ "WHERE conversation_id = #{conversationId} AND message_type = 'SUMMARY' ORDER BY id DESC LIMIT 1")
+	String selectSummary(@Param("conversationId") String conversationId);
 
-	/** 最新压缩条目;不存在返回 null */
-	@Select("SELECT id, session_id, kind, question, answer, create_time FROM session_memory WHERE session_id = #{sessionId} AND kind = 'summary' ORDER BY id DESC LIMIT 1")
-	SessionMemory selectLatestSummary(@Param("sessionId") String sessionId);
+	/** 摘要原地更新;返回影响行数(0 = 尚无摘要,由调用方首插) */
+	@Update("UPDATE session_memory SET content = #{content}, create_time = CURRENT_TIMESTAMP "
+			+ "WHERE conversation_id = #{conversationId} AND message_type = 'SUMMARY'")
+	int updateSummary(@Param("conversationId") String conversationId, @Param("content") String content);
 
-	/** 删除 id 不超过 maxId 的原文轮(压缩完成后的溢出清理) */
-	@Delete("DELETE FROM session_memory WHERE session_id = #{sessionId} AND kind = 'turn' AND id <= #{maxId}")
-	void deleteOverflowTurns(@Param("sessionId") String sessionId, @Param("maxId") Long maxId);
+	/** 追加一条消息 */
+	@Insert("INSERT INTO session_memory (conversation_id, message_type, content) "
+			+ "VALUES (#{conversationId}, #{messageType}, #{content})")
+	void insert(SessionMemory message);
 
-	/** 删除除 keepId 外的全部压缩条目(压缩写序最后一步:清旧摘要) */
-	@Delete("DELETE FROM session_memory WHERE session_id = #{sessionId} AND kind = 'summary' AND id <> #{keepId}")
-	void deleteOldSummaries(@Param("sessionId") String sessionId, @Param("keepId") Long keepId);
+	/** 删除若干条(窗口挤出且已并入摘要的消息) */
+	@Delete("<script>DELETE FROM session_memory WHERE conversation_id = #{conversationId} AND id IN "
+			+ "<foreach collection='ids' item='id' open='(' separator=',' close=')'>#{id}</foreach></script>")
+	void deleteByIds(@Param("conversationId") String conversationId, @Param("ids") List<Long> ids);
 
-	/** 删除某线程键的全部记忆条目(图侧清记忆接口用;客户端删会话编排时调用) */
-	@Delete("DELETE FROM session_memory WHERE session_id = #{sessionId}")
-	void deleteBySession(@Param("sessionId") String sessionId);
+	/** 清某会话的全部记忆(含摘要) */
+	@Delete("DELETE FROM session_memory WHERE conversation_id = #{conversationId}")
+	void deleteByConversation(@Param("conversationId") String conversationId);
 
 }

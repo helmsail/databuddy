@@ -29,9 +29,6 @@ mybatis: # 系统库 Mapper 的映射依赖:列名下划线 → 实体属性驼�
 databuddy:
   storage:
     local-root-path: ./data/files
-  graph:
-    plan-review-timeout: 24h # 人工确认闸的挂起等待窗口(超时作废检查点)
-    plan-review-sweep: 10m # 挂起超时清扫周期(定时扫描)
   python:
     image: databuddy-python:3.12 # 沙箱镜像,先构建 docker/python/Dockerfile
     min-idle: 1 # 常驻容器数(启动后异步预热)

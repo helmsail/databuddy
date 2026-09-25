@@ -13,8 +13,7 @@ import lombok.Data;
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class GraphSseChunk {
 
-	private String runId;
-
+	/** 会话键(= 图线程键;客户端据此停止/续跑) */
 	private String sessionId;
 
 	/** 文本来源节点(协议帧/汇总帧为空) */

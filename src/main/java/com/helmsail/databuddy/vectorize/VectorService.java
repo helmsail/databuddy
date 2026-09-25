@@ -21,7 +21,7 @@ import lombok.extern.slf4j.Slf4j;
 
 /**
  * 向量服务:内容向量化的唯一出入口——原文 + 策略进,包内完成切分 → 向量化 → 落库,并负责删除 / 检索。
- * metadata 字段约定统一收在 VectorMetadata(隔离过滤 / 回源锚点 / 重建判断),本类负责写入与过滤表达式构造。
+ * metadata 字段约定统一收在 VectorMetadata(隔离过滤 / 回源锚点),本类负责写入与过滤表达式构造。
  * index 先删同源旧向量再写入:重复入库幂等,分块数变少也不会留僵尸块
  */
 @Slf4j
@@ -55,18 +55,13 @@ public class VectorService {
 			return;
 		}
 		deleteBySource(agentId, sourceType, sourceId);
-		String modelName = aiModelServiceFactory.getEmbeddingModelName();
 		List<Document> documents = new ArrayList<>(chunks.size());
-		for (int i = 0; i < chunks.size(); i++) {
+		for (String chunk : chunks) {
 			Map<String, Object> metadata = new HashMap<>();
 			metadata.put(VectorMetadata.AGENT_ID, agentId);
 			metadata.put(VectorMetadata.SOURCE_TYPE, sourceType.name());
 			metadata.put(VectorMetadata.SOURCE_ID, sourceId);
-			metadata.put(VectorMetadata.CHUNK_INDEX, i);
-			if (StringUtils.hasText(modelName)) {
-				metadata.put(VectorMetadata.EMBEDDING_MODEL, modelName);
-			}
-			documents.add(new Document(chunks.get(i), metadata));
+			documents.add(new Document(chunk, metadata));
 		}
 		vectorStore.add(documents);
 		log.info("向量写入: agent={}, source={}#{}, chunks={}", agentId, sourceType, sourceId, chunks.size());

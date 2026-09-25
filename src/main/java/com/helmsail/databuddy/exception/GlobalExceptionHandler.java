@@ -12,7 +12,8 @@ import org.springframework.web.server.ResponseStatusException;
 /**
  * 全局异常处理器:JSON 端点错误的唯一出口,统一输出 ApiResponse 信封(与成功路径同形,约定见 ApiResponse)。
  * 覆盖矩阵:业务异常(按 ErrorCode 状态)/ 数据完整性冲突(400)/ 框架响应状态异常(保原状态)/ 兜底(500 脱敏)。
- * 通道边界:SSE 端点开流前的错误同样经此输出信封体;流中错误由 GraphService 以 error 帧产出,不经过此处
+ * 通道边界:图端点的校验/执行错误均走流内 error 帧(GraphService),不经过此处;
+ * 此处兜其余端点与框架级错误(参数绑定等;流式客户端读不到信封,降级为通用提示)
  */
 @Slf4j
 @RestControllerAdvice

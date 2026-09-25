@@ -1,6 +1,7 @@
 -- 系统库初始化脚本:启动幂等执行(建表 IF NOT EXISTS,可反复跑)
 -- 组织约定:表结构(DDL)统一放前面,初始化数据(种子 INSERT)统一放最后
 -- 内容:节点提示词模板(node_prompt_template)、会话记忆(session_memory)、模型配置(ai_model_config)、业务库配置(biz_database_config)与表级关联(biz_table_relation)、智能体(agent)与表绑定(agent_biz_table)、业务术语(agent_biz_term)、业务问答(agent_biz_qa)、业务文档(agent_biz_document)、会话(session)与会话消息(session_message)
+-- 对话记忆:全自研实现(SummarizingChatMemory,实现 Spring AI 官方 ChatMemory 接口):消息与摘要一体落 session_memory(本脚本建表)
 
 -- ============ 表结构 ============
 
@@ -17,16 +18,15 @@ CREATE TABLE IF NOT EXISTS node_prompt_template (
 	UNIQUE (name, enabled)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- 会话记忆:该会话的"记忆条目流";kind='turn' 原文轮(一行一轮) / kind='summary' 压缩条目(一行一段,浓缩掉的老轮)
--- 读序约定:最新一条 summary + 最近 N 条 turn 拼成上下文;压缩写序:先插新 summary、再删旧 summary 与溢出行
+-- 会话记忆(自研 ChatMemory 实现):一行 = 一条消息;窗口保留最近 20 条(即 10 轮),
+-- 挤出窗口的最早消息与旧摘要合并压缩成新摘要(message_type = SUMMARY,每会话至多一行、原地滚动覆盖)
 CREATE TABLE IF NOT EXISTS session_memory (
-	id          BIGINT AUTO_INCREMENT PRIMARY KEY,
-	session_id  VARCHAR(64)  NOT NULL,
-	kind        VARCHAR(16)  NOT NULL,
-	question    TEXT         NULL,
-	answer      TEXT         NOT NULL,
-	create_time DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
-	INDEX idx_session (session_id, kind, id)
+	id              BIGINT AUTO_INCREMENT PRIMARY KEY,
+	conversation_id VARCHAR(64)  NOT NULL,
+	message_type    VARCHAR(16)  NOT NULL,  -- USER / ASSISTANT / SUMMARY
+	content         TEXT         NOT NULL,
+	create_time     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	INDEX idx_conversation (conversation_id, id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- 模型配置:OpenAI 兼容协议;同时生效的 CHAT 与 EMBEDDING 各一个
@@ -164,7 +164,7 @@ CREATE TABLE IF NOT EXISTS session (
 	INDEX idx_agent (agent_id, update_time)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- 会话消息(无损全文;role = USER / ASSISTANT;message_type 起步 text,留扩展位;随会话硬删而清理)
+-- 会话消息(无损全文;role = USER / ASSISTANT;message_type = text / timeline / warning / error(过程段级类型在 timeline 的 blocks 内);随会话硬删而清理)
 CREATE TABLE IF NOT EXISTS session_message (
 	id           BIGINT AUTO_INCREMENT PRIMARY KEY,
 	session_id   VARCHAR(36) NOT NULL,
