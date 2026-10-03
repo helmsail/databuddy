@@ -15,6 +15,9 @@ public final class VectorMetadata {
 	/** 来源行主键 */
 	public static final String SOURCE_ID = "source_id";
 
+	/** 生成该向量的嵌入模型名(按模型划分向量分区:检索只在本模型分区内进行,切换模型互不串用) */
+	public static final String EMBEDDING_MODEL = "embedding_model";
+
 	private VectorMetadata() {
 	}
 

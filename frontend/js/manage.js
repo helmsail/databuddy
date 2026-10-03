@@ -163,7 +163,7 @@ function renderModelList() {
             <td class="dim small">${esc(paramSummary(m))}</td>
             <td>${m.isActive ? '<span class="chip green"><span class="dot"></span>已激活</span>' : '<span class="chip">未激活</span>'}</td>
             <td><div class="actions">
-              ${m.isActive ? `<button class="btn link" data-mdeact="${m.modelType}">失活</button>` : `<button class="btn link" data-act="${m.id}">激活(即时生效)</button>`}
+              ${m.isActive ? `<button class="btn link" data-mdeact="${m.id}" data-mtype="${esc(m.modelType)}">失活</button>` : `<button class="btn link" data-act="${m.id}">激活(即时生效)</button>`}
               <button class="btn link" data-mtest="${m.id}" data-name="${esc(m.modelName)}">测试</button>
               <button class="btn link" data-mcopy="${m.id}">复制新建</button>
               <button class="btn link danger" data-mdel="${m.id}" data-name="${esc(m.modelName)}" data-active="${m.isActive ? '1' : ''}">删除</button>
@@ -192,7 +192,8 @@ function renderModelList() {
   });
   $$('[data-mdeact]').forEach((b) => {
     b.onclick = () => {
-      const type = b.dataset.mdeact;
+      const id = b.dataset.mdeact;
+      const type = b.dataset.mtype;
       confirmBox({
         title: '失活模型配置',
         message: `失活后 ${type} 类型将无可用模型,聊天/向量化相关功能不可用(配置保留,可随时重新激活)。确认失活?`,
@@ -200,7 +201,7 @@ function renderModelList() {
         danger: true,
         onConfirm: async () => {
           try {
-            await api('POST', `/aimodel/configs/deactivate?type=${encodeURIComponent(type)}`);
+            await api('POST', `/aimodel/configs/${id}/deactivate`);
             await loadModels();
             renderModelList();
             refreshAgentUI();

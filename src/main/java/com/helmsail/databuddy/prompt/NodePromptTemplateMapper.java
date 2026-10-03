@@ -37,7 +37,7 @@ public interface NodePromptTemplateMapper {
 	void insert(NodePromptTemplate template);
 
 	/** 激活滚动:目标行置 1、同 name 其余置 NULL(一条语句原子完成) */
-	@Update("UPDATE node_prompt_template SET enabled = IF(id = #{id}, 1, NULL) WHERE name = #{name}")
+	@Update("UPDATE node_prompt_template SET enabled = CASE WHEN id = #{id} THEN 1 ELSE NULL END WHERE name = #{name}")
 	void activate(@Param("id") Long id, @Param("name") String name);
 
 }
