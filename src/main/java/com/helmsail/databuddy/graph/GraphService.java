@@ -30,8 +30,8 @@ import reactor.core.publisher.Sinks;
 import reactor.core.scheduler.Schedulers;
 
 /**
- * 图的服务:只做执行编排。图由 GraphConfig 装配注入;本服务自订阅图、组装事件
- * (step 过程帧 / plan 计划帧 / sql 帧 / result 结果帧 / text 正文 / done / error)、登记运行。
+ * 图的服务:只做执行编排,自建 sink 组装 SSE 流对外返回(入口错误帧/过程帧/收尾帧全在流内)。
+ * 图由 GraphConfig 装配注入;本服务订阅图、组装事件(step 过程帧 / plan 计划帧 / sql 帧 / result 结果帧 / text 正文 / done / error)、登记运行。
  * 线程键 = 官方 RunnableConfig.threadId(一线程一会话;值即业务侧会话键 sessionId):检查点挂在会话键下——
  * 跑完/停止/出错/开跑前释放、挂起轮保留(唯一例外,持久于库、跨重启有效)。
  * 挂起态与恢复全部走框架检查点:getState(next 含 PLAN_REVIEW = 挂起中)+ updateState(写决定)+ stream(null) 续跑,
@@ -62,13 +62,13 @@ public class GraphService {
 		this.checkpointSaver = checkpointSaver;
 	}
 
-	/** 发起一次执行(入口):agentId/input 必填;sessionId 缺省则生成(随事件回传);planReview = 人工确认闸开关(默认关);返回会话键 */
-	public String stream(Sinks.Many<ServerSentEvent<GraphSseChunk>> sink, long agentId, String input, String sessionId,
-			boolean planReview) {
+	/** 发起一次执行(入口):agentId/input 必填;sessionId 缺省则生成(随事件回传);planReview = 人工确认闸开关(默认关);返回组装好的 SSE 流 */
+	public Flux<ServerSentEvent<GraphSseChunk>> stream(long agentId, String input, String sessionId, boolean planReview) {
+		Sinks.Many<ServerSentEvent<GraphSseChunk>> sink = Sinks.many().unicast().onBackpressureBuffer();
 		String resolved = StringUtils.hasText(sessionId) ? sessionId : UUID.randomUUID().toString();
 		if (!StringUtils.hasText(input)) { // 入口校验失败走流内 error 帧(不再抛 HTTP 错误:EventSource 读不到信封)
 			fail(sink, resolved, "input 不能为空");
-			return resolved;
+			return wire(sink, resolved);
 		}
 		GraphRun run = new GraphRun(resolved, agentId, input, sink);
 		// 一线程一会话:put 原子替换旧现场(防御双发;旧检查点由其后的开局释放清理)
@@ -82,19 +82,41 @@ public class GraphService {
 		Mono.fromRunnable(() -> start(run, planReview))
 			.subscribeOn(Schedulers.boundedElastic())
 			.subscribe(ignored -> { }, error -> onError(run, error));
-		return run.getThreadId();
+		return wire(sink, resolved);
 	}
 
-	/** 恢复入口(人工确认):校验/防重/写决定/续跑整体调度到弹性线程(检查点读写都是阻塞活,不占事件循环);失败走 error 帧 | 返回会话键 */
-	public String resume(Sinks.Many<ServerSentEvent<GraphSseChunk>> sink, String sessionId, boolean approved,
-			String feedback) {
+	/** 恢复入口(人工确认):校验/防重/写决定/续跑整体调度到弹性线程(检查点读写都是阻塞活,不占事件循环);失败走 error 帧;返回组装好的 SSE 流 */
+	public Flux<ServerSentEvent<GraphSseChunk>> resume(String sessionId, boolean approved, String feedback) {
+		Sinks.Many<ServerSentEvent<GraphSseChunk>> sink = Sinks.many().unicast().onBackpressureBuffer();
 		Mono.fromRunnable(() -> startResume(sink, sessionId, approved, feedback))
 			.subscribeOn(Schedulers.boundedElastic())
 			.subscribe(ignored -> { }, error -> {
 				log.error("恢复流程异常: threadId={}", sessionId, error);
 				fail(sink, sessionId, "恢复失败");
 			});
-		return sessionId;
+		return wire(sink, sessionId);
+	}
+
+	/** SSE 管道公共接线:帧过滤(文本帧空文本不推,SQL 帧可重复推送)+ 断连/出错兜底停止 */
+	private Flux<ServerSentEvent<GraphSseChunk>> wire(Sinks.Many<ServerSentEvent<GraphSseChunk>> sink,
+			String sessionId) {
+		return sink.asFlux()
+			// 只放行"有文本的文本帧"与协议帧
+			.filter(sse -> {
+				GraphSseChunk chunk = sse.data();
+				if (!GraphKeys.TEXT.equals(chunk.getEventType())) {
+					return true;
+				}
+				return StringUtils.hasText(chunk.getText());
+			})
+			.doOnCancel(() -> {
+				log.debug("客户端断开,停止执行: sessionId={}", sessionId);
+				stop(sessionId);
+			})
+			.doOnError(error -> {
+				log.error("SSE 管道出错: sessionId={}", sessionId, error);
+				stop(sessionId);
+			});
 	}
 
 	private void start(GraphRun run, boolean planReview) {

@@ -4,7 +4,9 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.springframework.http.codec.ServerSentEvent;
 
+import lombok.AccessLevel;
 import lombok.Getter;
+import lombok.Setter;
 import reactor.core.Disposable;
 import reactor.core.publisher.Sinks;
 
@@ -14,6 +16,7 @@ import reactor.core.publisher.Sinks;
  * 一线程一会话:threadId 的值即会话键(对外帧与 HTTP 仍用 sessionId 这一业务词)
  */
 @Getter
+@Setter(AccessLevel.PACKAGE)
 class GraphRun {
 
 	private final String threadId;
@@ -44,22 +47,6 @@ class GraphRun {
 		this.agentId = agentId;
 		this.input = input;
 		this.sink = sink;
-	}
-
-	void setFinalAnswer(String finalAnswer) {
-		this.finalAnswer = finalAnswer;
-	}
-
-	void setLastStep(String lastStep) {
-		this.lastStep = lastStep;
-	}
-
-	void setLastSql(String lastSql) {
-		this.lastSql = lastSql;
-	}
-
-	void setLastResult(String lastResult) {
-		this.lastResult = lastResult;
 	}
 
 	/** 订阅建立后回填;若期间已被要求停止,立即掐掉 */

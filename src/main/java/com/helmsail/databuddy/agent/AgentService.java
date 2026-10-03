@@ -35,7 +35,7 @@ import lombok.extern.slf4j.Slf4j;
 
 /**
  * 智能体服务:agent 域的唯一对外口(身份 + 跨域横切 + 检索用例);域外只认本类,子域 CRUD 不镜像进来。
- * 检索:跨四类来源向量命中 + 按来源回源补齐(QA 补答案、术语补同义词、文档补名称);
+ * 检索:跨四类来源向量命中 + 按来源回源补齐(QA 补答案、文档补名称;术语/表块内容自足);
  * 级联删除:四域逐行清(行 + 向量 + 物理文件)+ 会话域(行 + 消息)→ 向量兜底清扫 → 删 agent 行
  */
 @Slf4j
@@ -124,7 +124,7 @@ public class AgentService {
 	}
 
 	/**
-	 * 检索:跨四类来源向量命中,再按来源回源补齐(QA 补答案、术语补同义词、文档补名称;表块自足)。
+	 * 检索:跨四类来源向量命中,再按来源回源补齐(QA 补答案、文档补名称;术语与表块内容自足)。
 	 * 供域外(图节点等)消费;只回结构化块,上下文成文由调用方做
 	 */
 	public List<RetrievedChunk> retrieve(long agentId, String query, int topK) {
@@ -206,19 +206,13 @@ public class AgentService {
 		return dbType == DbType.MYSQL ? "MySQL" : dbType.name();
 	}
 
-	/** 回源补齐:按来源取本行"不在向量里"的字段(QA 答案 / 术语同义词 / 文档名);行已删则空表 */
+	/** 回源补齐:按来源取本行"不在向量里"的字段(QA 答案 / 文档名);行已删则空表 */
 	private Map<String, Object> extra(IndexSourceType sourceType, long sourceId) {
 		switch (sourceType) {
 			case QA -> {
 				AgentBizQa qa = agentBizQaService.get(sourceId);
 				if (qa != null && StringUtils.hasText(qa.getContent())) {
 					return Map.of("answer", qa.getContent());
-				}
-			}
-			case BIZ_TERM -> {
-				AgentBizTerm term = agentBizTermService.get(sourceId);
-				if (term != null && StringUtils.hasText(term.getSynonyms())) {
-					return Map.of("synonyms", term.getSynonyms());
 				}
 			}
 			case DOCUMENT -> {

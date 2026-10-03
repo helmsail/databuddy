@@ -99,10 +99,6 @@ public class KnowledgeRecallNode implements AsyncNodeAction {
 		for (int i = 0; i < hits.size(); i++) {
 			RetrievedChunk hit = hits.get(i);
 			sb.append(i + 1).append(". ").append(prefix(hit)).append(hit.content());
-			Object synonyms = hit.extra().get("synonyms");
-			if (synonyms != null) {
-				sb.append(" (同义词: ").append(synonyms).append(')');
-			}
 			Object answer = hit.extra().get("answer");
 			if (answer != null) {
 				sb.append(" A: ").append(answer);

@@ -19,7 +19,7 @@ import lombok.extern.slf4j.Slf4j;
 
 /**
  * 术语服务:agent_biz_term 行的生命周期(新增 / 修改 / 删除 / 列表)与单条同步向量化。
- * CRUD 即触发(同步等待结果):向量化内容 = 术语 + 释义(WHOLE 一块),走 VectorService 唯一口;
+ * CRUD 即触发(同步等待结果):向量化内容 = 术语 + 同义词 + 释义(WHOLE 一块),走 VectorService 唯一口;
  * 同步失败不阻断落库,FAILED + 原因落库,手动 retryUnsynced 与定时兜底共用
  */
 @Slf4j
@@ -149,9 +149,12 @@ public class AgentBizTermService {
 		}
 	}
 
-	/** 向量化文本:术语 + 释义;释义缺失只省略、不失败(内容兜底) */
+	/** 向量化文本:术语 + 同义词 + 释义;同义词/释义缺失只省略、不失败(内容兜底);三者齐入索引,保证规范表述与别称/简称均可召回 */
 	private String buildContent(AgentBizTerm term) {
 		StringBuilder content = new StringBuilder("术语: ").append(term.getBusinessTerm());
+		if (StringUtils.hasText(term.getSynonyms())) {
+			content.append('\n').append("同义词: ").append(term.getSynonyms());
+		}
 		if (StringUtils.hasText(term.getDescription())) {
 			content.append('\n').append("释义: ").append(term.getDescription());
 		}
