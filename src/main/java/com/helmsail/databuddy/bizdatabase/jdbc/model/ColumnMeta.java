@@ -4,11 +4,11 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 
 /**
- * 列信息
+ * 列元数据(表结构条目)
  */
 @Data
 @AllArgsConstructor
-public class ColumnInfo {
+public class ColumnMeta {
 
 	/** 列名 */
 	private String name;

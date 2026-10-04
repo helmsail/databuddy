@@ -6,7 +6,7 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 
 /**
- * 表数据(预览结果)
+ * SQL 结果集(任意查询的结果):列标题 + 行数据,行内与列顺序对应
  */
 @Data
 @AllArgsConstructor

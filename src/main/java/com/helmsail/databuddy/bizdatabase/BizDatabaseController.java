@@ -12,13 +12,14 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-import com.helmsail.databuddy.bizdatabase.jdbc.model.ColumnInfo;
-import com.helmsail.databuddy.bizdatabase.jdbc.model.TableInfo;
+import com.helmsail.databuddy.bizdatabase.jdbc.model.ColumnMeta;
+import com.helmsail.databuddy.bizdatabase.jdbc.model.TableMeta;
 import com.helmsail.databuddy.result.ApiResponse;
 
 /**
- * 业务库模块唯一入口:配置(列表/新增/更新/删除;新增与更新会先探测真实连通)、表清单与表结构查询、
- * 表关系(列表/新增/删除);只做 HTTP 层,编排全在 BizDatabaseService;成功失败均为统一信封(见 ApiResponse)
+ * 业务库模块唯一入口:配置(列表/新增/更新/删除;新增与更新会先探测真实连通)、
+ * 表关系(列表/新增/删除)、表清单与表结构查询;只做 HTTP 层,编排全在 BizDatabaseService;
+ * 成功失败均为统一信封(见 ApiResponse)
  */
 @RestController
 @RequestMapping("/bizdatabase")
@@ -57,18 +58,6 @@ public class BizDatabaseController {
 		return ApiResponse.success();
 	}
 
-	/** 某库的表清单(直连实时查询) */
-	@GetMapping("/configs/{id}/tables")
-	public ApiResponse<List<TableInfo>> listTables(@PathVariable("id") Long id) {
-		return ApiResponse.success(bizDatabaseService.listTables(id));
-	}
-
-	/** 某表的结构(直连实时查询) */
-	@GetMapping("/configs/{id}/tables/{table}/columns")
-	public ApiResponse<List<ColumnInfo>> listColumns(@PathVariable("id") Long id, @PathVariable("table") String table) {
-		return ApiResponse.success(bizDatabaseService.listColumns(id, table));
-	}
-
 	/** 某库的关系列表 */
 	@GetMapping("/relations")
 	public ApiResponse<List<BizTableRelation>> listRelations(@RequestParam("databaseConfigId") Long databaseConfigId) {
@@ -86,6 +75,18 @@ public class BizDatabaseController {
 	public ApiResponse<Void> deleteRelation(@PathVariable("id") Long id) {
 		bizDatabaseService.deleteRelation(id);
 		return ApiResponse.success();
+	}
+
+	/** 某库的表清单(直连实时查询) */
+	@GetMapping("/configs/{id}/tables")
+	public ApiResponse<List<TableMeta>> listTables(@PathVariable("id") Long id) {
+		return ApiResponse.success(bizDatabaseService.listTables(id));
+	}
+
+	/** 某表的结构(直连实时查询) */
+	@GetMapping("/configs/{id}/tables/{table}/columns")
+	public ApiResponse<List<ColumnMeta>> listColumns(@PathVariable("id") Long id, @PathVariable("table") String table) {
+		return ApiResponse.success(bizDatabaseService.listColumns(id, table));
 	}
 
 }

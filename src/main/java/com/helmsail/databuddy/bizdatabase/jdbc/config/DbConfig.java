@@ -22,7 +22,4 @@ public class DbConfig {
 	/** 密码 */
 	private String password;
 
-	/** 模式名(MySQL 即库名,可为空) */
-	private String schema;
-
 }

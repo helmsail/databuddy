@@ -13,8 +13,8 @@ import org.springframework.util.StringUtils;
 import com.helmsail.databuddy.agent.AgentMapper;
 import com.helmsail.databuddy.agent.EmbeddingStatus;
 import com.helmsail.databuddy.bizdatabase.BizDatabaseService;
-import com.helmsail.databuddy.bizdatabase.jdbc.model.ColumnInfo;
-import com.helmsail.databuddy.bizdatabase.jdbc.model.TableInfo;
+import com.helmsail.databuddy.bizdatabase.jdbc.model.ColumnMeta;
+import com.helmsail.databuddy.bizdatabase.jdbc.model.TableMeta;
 import com.helmsail.databuddy.exception.BusinessException;
 import com.helmsail.databuddy.exception.ErrorCode;
 import com.helmsail.databuddy.vectorize.IndexSourceType;
@@ -66,7 +66,7 @@ public class AgentBizTableService {
 			throw new BusinessException(ErrorCode.NOT_FOUND, "agent 不存在: " + agentId);
 		}
 		Set<String> existing = new HashSet<>();
-		for (TableInfo table : bizDatabaseService.listTables(databaseConfigId)) {
+		for (TableMeta table : bizDatabaseService.listTables(databaseConfigId)) {
 			existing.add(table.getName());
 		}
 		Set<String> bound = new HashSet<>();
@@ -145,7 +145,7 @@ public class AgentBizTableService {
 		for (AgentBizTable row : rows) {
 			try {
 				String tableComment = tableComment(commentsByConfig, row.getDatabaseConfigId(), row.getTableName());
-				List<ColumnInfo> columns = bizDatabaseService.listColumns(row.getDatabaseConfigId(), row.getTableName());
+				List<ColumnMeta> columns = bizDatabaseService.listColumns(row.getDatabaseConfigId(), row.getTableName());
 				String content = buildContent(row.getTableName(), tableComment, columns);
 				vectorService.index(agentId, IndexSourceType.BIZ_TABLE, row.getId(), SplitterType.WHOLE, content);
 				mapper.updateSyncStatus(row.getId(), EmbeddingStatus.SYNCED, null);
@@ -164,7 +164,7 @@ public class AgentBizTableService {
 	private String tableComment(Map<Long, Map<String, String>> commentsByConfig, long configId, String tableName) {
 		Map<String, String> comments = commentsByConfig.computeIfAbsent(configId, id -> {
 			Map<String, String> map = new HashMap<>();
-			for (TableInfo table : bizDatabaseService.listTables(id)) {
+			for (TableMeta table : bizDatabaseService.listTables(id)) {
 				map.put(table.getName(), table.getComment());
 			}
 			return map;
@@ -173,13 +173,13 @@ public class AgentBizTableService {
 	}
 
 	/** 向量化文本:表名 + 表注释 + 列(名 / 类型 / 注释);注释缺失只省略、不失败(内容兜底) */
-	private String buildContent(String tableName, String tableComment, List<ColumnInfo> columns) {
+	private String buildContent(String tableName, String tableComment, List<ColumnMeta> columns) {
 		StringBuilder content = new StringBuilder("表: ").append(tableName);
 		if (StringUtils.hasText(tableComment)) {
 			content.append("(").append(tableComment).append(")");
 		}
 		content.append('\n');
-		for (ColumnInfo column : columns) {
+		for (ColumnMeta column : columns) {
 			content.append(column.getName()).append(' ').append(column.getDataType());
 			if (StringUtils.hasText(column.getComment())) {
 				content.append(" - ").append(column.getComment());

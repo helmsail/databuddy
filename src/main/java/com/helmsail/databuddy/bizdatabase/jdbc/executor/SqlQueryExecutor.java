@@ -8,9 +8,9 @@ import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.List;
 
-import com.helmsail.databuddy.bizdatabase.jdbc.model.ColumnInfo;
+import com.helmsail.databuddy.bizdatabase.jdbc.model.ColumnMeta;
 import com.helmsail.databuddy.bizdatabase.jdbc.model.TableData;
-import com.helmsail.databuddy.bizdatabase.jdbc.model.TableInfo;
+import com.helmsail.databuddy.bizdatabase.jdbc.model.TableMeta;
 import com.helmsail.databuddy.exception.BusinessException;
 import com.helmsail.databuddy.exception.ErrorCode;
 
@@ -29,11 +29,11 @@ public final class SqlQueryExecutor {
 	}
 
 	/** 查询表清单,SQL 由 SqlDialect.listTablesSql 生成 */
-	public static List<TableInfo> queryTables(Connection connection, String sql) {
+	public static List<TableMeta> queryTables(Connection connection, String sql) {
 		try (Statement statement = newStatement(connection); ResultSet rs = statement.executeQuery(sql)) {
-			List<TableInfo> tables = new ArrayList<>();
+			List<TableMeta> tables = new ArrayList<>();
 			while (rs.next()) {
-				tables.add(new TableInfo(rs.getString(1), rs.getString(2)));
+				tables.add(new TableMeta(rs.getString(1), rs.getString(2)));
 			}
 			return tables;
 		}
@@ -43,12 +43,12 @@ public final class SqlQueryExecutor {
 	}
 
 	/** 查询表结构,SQL 由 SqlDialect.listColumnsSql 生成 */
-	public static List<ColumnInfo> queryColumns(Connection connection, String sql) {
+	public static List<ColumnMeta> queryColumns(Connection connection, String sql) {
 		try (Statement statement = newStatement(connection); ResultSet rs = statement.executeQuery(sql)) {
-			List<ColumnInfo> columns = new ArrayList<>();
+			List<ColumnMeta> columns = new ArrayList<>();
 			while (rs.next()) {
 				String nullable = rs.getString(3);
-				columns.add(new ColumnInfo(rs.getString(1), rs.getString(2),
+				columns.add(new ColumnMeta(rs.getString(1), rs.getString(2),
 						"Y".equalsIgnoreCase(nullable) || "YES".equalsIgnoreCase(nullable), rs.getString(4)));
 			}
 			return columns;
@@ -58,7 +58,7 @@ public final class SqlQueryExecutor {
 		}
 	}
 
-	/** 查询表数据,SQL 由 SqlDialect.previewTableSql 生成 */
+	/** 查询表数据:任意 SELECT 的结果集转 TableData,列名取标签(label)、行值取对象;SQL 由调用方给定 */
 	public static TableData queryTableData(Connection connection, String sql) {
 		try (Statement statement = newStatement(connection); ResultSet rs = statement.executeQuery(sql)) {
 			ResultSetMetaData metaData = rs.getMetaData();
