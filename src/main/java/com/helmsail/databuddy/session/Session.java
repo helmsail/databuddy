@@ -17,13 +17,13 @@ public class Session {
 	/** 归属 agent */
 	private Long agentId;
 
-	/** 标题(首条消息保存时截取;可空) */
+	/** 标题(建会话时按首条消息传入,压平截取;可空) */
 	private String title;
 
 	/** 创建时间 */
 	private LocalDateTime createTime;
 
-	/** 最近活跃时间(存消息时 touch,列表排序用) */
+	/** 最近活跃时间(建消息时 touch,列表排序用) */
 	private LocalDateTime updateTime;
 
 }

@@ -33,35 +33,37 @@ public class SessionController {
 
 	/** 建会话:返回会话行(客户端拿 UUID 发起对话/删除) */
 	@PostMapping
-	public ApiResponse<Session> create(@RequestParam("agentId") long agentId,
+	public ApiResponse<Session> createSession(@RequestParam("agentId") long agentId,
 			@RequestParam(value = "title", required = false) String title) {
-		return ApiResponse.success(sessionService.create(agentId, title));
+		return ApiResponse.success(sessionService.createSession(agentId, title));
 	}
 
-	/** 某 agent 的会话列表(最近活跃在前) */
-	@GetMapping
-	public ApiResponse<List<Session>> list(@RequestParam("agentId") long agentId) {
-		return ApiResponse.success(sessionService.list(agentId));
-	}
-
-	/** 会话消息(时间正序,全量) */
-	@GetMapping("/{sessionId}/messages")
-	public ApiResponse<List<SessionMessage>> messages(@PathVariable("sessionId") String sessionId) {
-		return ApiResponse.success(sessionService.listMessages(sessionId));
-	}
-
-	/** 存消息(客户端在发问前/收尾时调用;首条顺带填标题) */
+	/** 建消息(客户端在发问前/收尾时调用) */
 	@PostMapping("/{sessionId}/messages")
-	public ApiResponse<SessionMessage> saveMessage(@PathVariable("sessionId") String sessionId,
+	public ApiResponse<SessionMessage> createMessage(@PathVariable("sessionId") String sessionId,
 			@RequestBody SessionMessage message) {
-		return ApiResponse.success(sessionService.saveMessage(sessionId, message));
+		return ApiResponse.success(sessionService.createMessage(sessionId, message));
 	}
 
 	/** 删会话(硬删:消息 + 会话行;图侧清理由客户端先调 /graph/stop/{sessionId} 与 /graph/memory/{sessionId}) */
 	@DeleteMapping("/{sessionId}")
-	public ApiResponse<Void> delete(@PathVariable("sessionId") String sessionId) {
-		sessionService.delete(sessionId);
+	public ApiResponse<Void> deleteSession(@PathVariable("sessionId") String sessionId) {
+		sessionService.deleteSession(sessionId);
 		return ApiResponse.success();
+	}
+
+	/** 某 agent 的会话列表(最近活跃在前) */
+	@GetMapping
+	public ApiResponse<List<Session>> listSessions(@RequestParam("agentId") long agentId) {
+		return ApiResponse.success(sessionService.listSessions(agentId));
+	}
+
+	/** 会话消息单页(时间正序;beforeId 空 = 最新一页,返回不足 limit 条即已到最早) */
+	@GetMapping("/{sessionId}/messages")
+	public ApiResponse<List<SessionMessage>> listMessages(@PathVariable("sessionId") String sessionId,
+			@RequestParam(value = "beforeId", required = false) Long beforeId,
+			@RequestParam(value = "limit", defaultValue = "50") int limit) {
+		return ApiResponse.success(sessionService.listMessages(sessionId, beforeId, limit));
 	}
 
 }

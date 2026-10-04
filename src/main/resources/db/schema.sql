@@ -163,14 +163,13 @@ CREATE TABLE IF NOT EXISTS session (
 	INDEX idx_agent (agent_id, update_time)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- 会话消息(无损全文;role = USER / ASSISTANT;message_type = text / timeline / warning / error(过程段级类型在 timeline 的 blocks 内);随会话硬删而清理)
+-- 会话消息(role = USER / ASSISTANT;content: USER = 原始提问,ASSISTANT = 前端在图跑完获得完整输出后编排的 JSON(blocks 段级类型在载荷内 + report);失败轮不落库;随会话硬删而清理)
 CREATE TABLE IF NOT EXISTS session_message (
-	id           BIGINT AUTO_INCREMENT PRIMARY KEY,
-	session_id   VARCHAR(36) NOT NULL,
-	role         VARCHAR(16) NOT NULL,
-	content      MEDIUMTEXT  NOT NULL,
-	message_type VARCHAR(32) NOT NULL DEFAULT 'text',
-	create_time  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	id          BIGINT AUTO_INCREMENT PRIMARY KEY,
+	session_id  VARCHAR(36) NOT NULL,
+	role        VARCHAR(16) NOT NULL,
+	content     MEDIUMTEXT  NOT NULL,
+	create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 	INDEX idx_session (session_id, id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 

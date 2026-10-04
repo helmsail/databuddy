@@ -117,7 +117,7 @@ public class AgentService {
 		for (AgentBizDocument document : agentBizDocumentService.list(id)) {
 			agentBizDocumentService.delete(document.getId());
 		}
-		sessionService.deleteByAgent(id);   // 会话域:行 + 消息
+		sessionService.deleteSessionsByAgent(id);   // 会话域:行 + 消息
 		vectorService.deleteByDims(id, null, null, null);   // 兜底:清残留向量(防历史脏数据)
 		agentMapper.deleteById(id);
 		log.info("agent 删除(级联): {} (#{})", agent.getName(), id);

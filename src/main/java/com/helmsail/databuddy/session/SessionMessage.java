@@ -5,7 +5,7 @@ import java.time.LocalDateTime;
 import lombok.Data;
 
 /**
- * 会话消息(给人看的无损全文;写入由客户端编排,随会话硬删而清理)
+ * 会话消息(写入由客户端编排:USER 存原始提问,ASSISTANT 在图跑完获得完整输出后组装;失败轮不落库;随会话硬删而清理)
  */
 @Data
 public class SessionMessage {
@@ -19,11 +19,8 @@ public class SessionMessage {
 	/** 角色:USER / ASSISTANT */
 	private MessageRole role;
 
-	/** 消息全文(user = 原始输入,assistant = 最终回复 / 错误 / 终止提示等) */
+	/** 消息全文(USER = 原始提问;ASSISTANT = 编排好的完整输出 JSON:blocks 段级类型在载荷内 + report) */
 	private String content;
-
-	/** 消息类型(闭集):text 纯文本 / timeline 过程聚合(段类型在其 blocks 内)/ warning 停止提示 / error 错误 */
-	private String messageType;
 
 	/** 创建时间 */
 	private LocalDateTime createTime;

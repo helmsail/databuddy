@@ -1,14 +1,16 @@
 /* ============================================================
  * chat.js —— 数据问答页:会话管理(客户端编排)+ SSE 流式渲染
  * 时间线(步骤/SQL/结果/计划)+ 报告卡(markdown)+ 计划确认(挂起恢复)
- * 消息持久化(类型闭集 text/timeline/warning/error):assistant 正常存一条 timeline
- * (content = {"blocks":[…], "report": …});纯错误存 error;用户停止补一条 warning;user 消息类型走服务端缺省(text)
+ * 消息持久化(客户端编排):发问前存 user 原文;图跑完把完整输出编排为 JSON(blocks + report)落库;
+ * 失败/终止轮不落库(仅本会话内提示)
  * ============================================================ */
 
 const chatState = {
   sessionId: null,
   sessions: [],
   messages: [],
+  hasMore: false,
+  loadingOlder: false,
   busy: false,
   es: null,
   blocks: [],
@@ -27,6 +29,9 @@ const WELCOME_TIPS = [
   '复购率最高的城市是哪一个?',
 ];
 
+const MSG_PAGE = 50; // 历史消息单页条数(首屏打开/上拉翻页共用)
+const MSG_TOP_TRIGGER = 48; // scrollTop 低于它即触发加载更早
+
 /* ================= 挂载 ================= */
 async function mountChat(view) {
   closeChatStream();
@@ -34,6 +39,8 @@ async function mountChat(view) {
     sessionId: null,
     sessions: [],
     messages: [],
+    hasMore: false,
+    loadingOlder: false,
     busy: false,
     blocks: [],
     planText: '',
@@ -58,8 +65,14 @@ async function mountChat(view) {
       </section>
     </div>`;
 
-  $('#sess-new').onclick = createChatSession;
+  $('#sess-new').onclick = startNewChat;
   $('#sess-refresh').onclick = () => loadChatSessions().catch((e) => toast(e.message, true));
+
+  // 上拉加载更早:接近顶部即触发翻页(防重由 loadOlderMessages 内部守卫)
+  const box = $('#msgs');
+  box.onscroll = () => {
+    if (box.scrollTop < MSG_TOP_TRIGGER) loadOlderMessages();
+  };
 
   renderComposer();
   await loadChatSessions().catch((e) => toast(e.message, true));
@@ -107,13 +120,28 @@ function renderSessions() {
   });
 }
 
-async function createChatSession() {
+/* 新建会话(按钮):仅重置到待发问状态;会话行在首条消息发送时随标题一并落库 */
+function startNewChat() {
+  chatState.sessionId = null;
+  chatState.messages = [];
+  chatState.hasMore = false;
+  chatState.pendingPlan = false;
+  chatState.planText = '';
+  renderSessions();
+  renderMessages();
+  renderFeedbackPanel();
+  $('#chat-input') && $('#chat-input').focus();
+}
+
+/* 建会话(首条消息时自动调用):标题随创建直插,不做后续回填 */
+async function createChatSession(title) {
   const agent = activeAgent();
   if (!agent) return toast('先在左侧选择智能体', true);
   try {
-    const s = await api('POST', '/session?agentId=' + agent.id);
+    const s = await api('POST', '/session?agentId=' + agent.id + '&title=' + encodeURIComponent((title || '').slice(0, 100)));
     chatState.sessionId = s.id;
     chatState.messages = [];
+    chatState.hasMore = false;
     chatState.pendingPlan = false;
     chatState.planText = '';
     renderSessions();
@@ -133,12 +161,34 @@ async function openChatSession(id) {
   renderSessions();
   renderFeedbackPanel();
   try {
-    chatState.messages = await api('GET', `/session/${id}/messages`);
+    chatState.messages = await api('GET', `/session/${id}/messages?limit=${MSG_PAGE}`);
+    chatState.hasMore = chatState.messages.length === MSG_PAGE;
   } catch (e) {
     chatState.messages = [];
+    chatState.hasMore = false;
     toast(e.message, true);
   }
   renderMessages();
+}
+
+/* 上拉翻页:取更早一页并前插,渲染时锚定滚动位置(视口不跳);不足一页即已到最早 */
+async function loadOlderMessages() {
+  const sid = chatState.sessionId;
+  if (!sid || !chatState.hasMore || chatState.loadingOlder || !chatState.messages.length) return;
+  chatState.loadingOlder = true;
+  try {
+    const older = await api('GET', `/session/${sid}/messages?beforeId=${chatState.messages[0].id}&limit=${MSG_PAGE}`);
+    if (sid !== chatState.sessionId) return;
+    if (older.length) {
+      chatState.messages = older.concat(chatState.messages);
+      renderMessages(true);
+    }
+    chatState.hasMore = older.length === MSG_PAGE;
+  } catch (e) {
+    toast(e.message, true);
+  } finally {
+    chatState.loadingOlder = false;
+  }
 }
 
 function removeChatSession(id) {
@@ -155,6 +205,7 @@ function removeChatSession(id) {
         if (chatState.sessionId === id) {
           chatState.sessionId = null;
           chatState.messages = [];
+          chatState.hasMore = false;
           renderMessages();
         }
         await loadChatSessions();
@@ -167,7 +218,7 @@ function removeChatSession(id) {
 }
 
 /* ================= 消息渲染 ================= */
-function renderMessages() {
+function renderMessages(keepScroll) {
   const box = $('#msgs');
   if (!box) return;
   if (!activeAgent()) {
@@ -198,31 +249,32 @@ function renderMessages() {
     box.innerHTML = '<div class="empty">开始提问吧 —— 结果会以「执行时间线 + 分析报告」呈现</div>';
     return;
   }
+  const prevHeight = box.scrollHeight;
+  const prevTop = box.scrollTop;
   box.innerHTML = chatState.messages.map(renderHistoryMsg).join('');
-  scrollChatBottom();
+  if (keepScroll) {
+    box.scrollTop = prevTop + (box.scrollHeight - prevHeight);
+  } else {
+    scrollChatBottom();
+  }
 }
 
 function renderHistoryMsg(m) {
   if (m.role === 'USER') {
     return `<div class="msg-row user"><span class="msg-avatar me">我</span><div class="msg-bubble">${esc(m.content)}</div></div>`;
   }
-  let inner;
-  if (m.messageType === 'timeline') {
-    let data = null;
-    try {
-      data = JSON.parse(m.content);
-    } catch {
-      data = { blocks: [], report: m.content };
+  // ASSISTANT:content 为编排好的完整输出 JSON(blocks + report);非 JSON 按纯文本兜底(如会话内的失败/终止提示)
+  let data = { blocks: [], report: m.content };
+  try {
+    const parsed = JSON.parse(m.content);
+    if (parsed && typeof parsed === 'object') {
+      data = parsed;
     }
-    inner = `${renderBlocks(data.blocks || [], true)}${data.report ? reportBody(data.report) : ''}`;
-    if (!inner) inner = '<div class="md">(空消息)</div>';
-  } else if (m.messageType === 'warning') {
-    inner = `<div class="status-banner warn">⚠ ${esc(m.content)}</div>`;
-  } else if (m.messageType === 'error') {
-    inner = `<div class="status-banner err">✕ ${esc(m.content)}</div>`;
-  } else {
-    inner = reportBody(m.content);
+  } catch {
+    /* 非 JSON:用上面的兜底 */
   }
+  let inner = `${renderBlocks(data.blocks || [], true)}${data.report ? reportBody(data.report) : ''}`;
+  if (!inner) inner = '<div class="md">(空消息)</div>';
   return `<div class="msg-row"><span class="msg-avatar ai">AI</span><div class="msg-block">${inner}</div></div>`;
 }
 
@@ -430,26 +482,17 @@ function finishChatStream() {
   toggleComposerBusy(false);
   if (!wasBusy) return;
 
-  const hasData =
-    chatState.blocks.length || chatState.finalText || chatState.streamErr;
-  if (hasData && chatState.sessionId) {
-    let content;
-    let messageType = 'timeline';
-    if (chatState.streamErr && !chatState.blocks.length) {
-      messageType = 'error';
-      content = chatState.streamErr;
-    } else {
-      content = JSON.stringify({
-        blocks: chatState.blocks,
-        report: chatState.finalText || (chatState.streamErr ? `执行中断:${chatState.streamErr}` : null),
-      });
-    }
+  if (chatState.streamErr) {
+    // 失败轮不落库;仅本会话内可见提示
+    chatState.messages.push({ role: 'ASSISTANT', content: chatState.streamErr });
+  } else if (chatState.sessionId && (chatState.blocks.length || chatState.finalText)) {
+    // 图跑完获得完整输出:前端编排为稳定 content(blocks + 最终报告)后落库
+    const content = JSON.stringify({ blocks: chatState.blocks, report: chatState.finalText || null });
     api('POST', `/session/${chatState.sessionId}/messages`, {
       role: 'ASSISTANT',
       content,
-      messageType,
     }).catch(() => {});
-    chatState.messages.push({ role: 'ASSISTANT', content, messageType });
+    chatState.messages.push({ role: 'ASSISTANT', content });
   }
   chatState.blocks = [];
   chatState.finalText = '';
@@ -605,7 +648,7 @@ async function sendChat() {
   if (!agent) return toast('先在左侧选择智能体', true);
   if (chatState.pendingPlan) return toast('有计划待确认,请先接受或拒绝', true);
   if (!chatState.sessionId) {
-    await createChatSession();
+    await createChatSession(text);
     if (!chatState.sessionId) return;
   }
   try {
@@ -643,15 +686,9 @@ function stopChat() {
   closeChatStream();
   finishChatStream();
   if (chatState.sessionId) api('POST', '/graph/stop/' + encodeURIComponent(chatState.sessionId)).catch(() => {});
-  // 历史留一笔"已终止"警示(warning 渲染分支此前有读无写)
+  // 终止未获得完整输出,不落库;仅本会话内可见提示
   if (chatState.sessionId) {
-    const content = '用户已终止本次执行。';
-    api('POST', `/session/${chatState.sessionId}/messages`, {
-      role: 'ASSISTANT',
-      content,
-      messageType: 'warning',
-    }).catch(() => {});
-    chatState.messages.push({ role: 'ASSISTANT', content, messageType: 'warning' });
+    chatState.messages.push({ role: 'ASSISTANT', content: '用户已终止本次执行。' });
     renderMessages();
   }
   toast('已停止');
