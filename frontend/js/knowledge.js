@@ -318,7 +318,7 @@ function showDocUploadModal() {
     body: `
       <div class="field" style="margin-bottom:12px">
         <label>文件 <span class="req">*</span></label>
-        <input type="file" id="up-file" accept=".txt,.md,.markdown,.csv,.sql,.json,.xml,.yml,.yaml,.log,.html,.htm,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.rtf,.odt,.ods,.odp">
+        <input type="file" id="up-file" accept=".txt,.md,.markdown,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx">
       </div>
       <div class="form-grid">
         <div class="field"><label>文档名(缺省用文件名)</label><input id="up-name" placeholder="如:业务规则说明书.md"></div>
@@ -610,7 +610,7 @@ function renderKbRetrieve(body) {
               .map(([key, v]) => `${key}: ${v}`)
               .join(' · ');
             return `<div class="hit">
-          <span class="chip blue">${SOURCE_LABELS[h.sourceType] || h.sourceType} #${h.sourceId}</span>
+          <span class="chip blue">${KNOWLEDGE_LABELS[h.knowledgeType] || h.knowledgeType} #${h.knowledgeId}</span>
           <div class="hit-body">
             <div class="hit-text">${esc(text.length > 260 ? text.slice(0, 260) + '…' : text)}</div>
             <div class="hit-meta">${esc(extra)}${extra ? ' · ' : ''}score ${Number(h.score).toFixed(4)}</div>
@@ -628,4 +628,4 @@ function renderKbRetrieve(body) {
   });
 }
 
-const SOURCE_LABELS = { BIZ_TABLE: '表', BIZ_TERM: '术语', DOCUMENT: '文档', QA: '问答' };
+const KNOWLEDGE_LABELS = { TABLE: '表', TERM: '术语', DOCUMENT: '文档', QA: '问答' };

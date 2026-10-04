@@ -1,4 +1,4 @@
-package com.helmsail.databuddy.storage.local;
+package com.helmsail.databuddy.storage;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -11,9 +11,6 @@ import org.springframework.stereotype.Component;
 
 import com.helmsail.databuddy.exception.BusinessException;
 import com.helmsail.databuddy.exception.ErrorCode;
-import com.helmsail.databuddy.storage.FileStorage;
-import com.helmsail.databuddy.storage.StorageProperties;
-import com.helmsail.databuddy.storage.StorageType;
 
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
@@ -22,10 +19,7 @@ import reactor.core.scheduler.Schedulers;
  * 本地文件存储:文件保存在配置的根目录下,所有路径必须落在根目录内
  */
 @Component
-public class LocalFileStorage implements FileStorage {
-
-	/** 访问 URL 前缀(getUrl 生成用;下载入口走 agent 域端点,此形态留待 OSS/CDN 场景) */
-	private static final String URL_PREFIX = "/files/";
+public class LocalFileStorage {
 
 	private final StorageProperties properties;
 
@@ -33,12 +27,13 @@ public class LocalFileStorage implements FileStorage {
 		this.properties = properties;
 	}
 
-	@Override
-	public StorageType type() {
-		return StorageType.LOCAL;
-	}
-
-	@Override
+	/**
+	 * 存储上传的文件
+	 * @param filePart 上传的文件
+	 * @param subPath 业务子目录(相对根,如 docs/1),可为空
+	 * @param filename 落盘文件名(调用方显式给定:与业务名一致并防同源覆盖,如文档名)
+	 * @return 存储路径(相对根目录,如 docs/1/合同.txt)
+	 */
 	public Mono<String> store(FilePart filePart, String subPath, String filename) {
 		return Mono.defer(() -> {
 			String relative = relativePath(subPath, filename);
@@ -50,7 +45,7 @@ public class LocalFileStorage implements FileStorage {
 		});
 	}
 
-	@Override
+	/** 删除文件;不存在时静默成功 */
 	public void delete(String path) {
 		Path target = resolve(path);
 		try {
@@ -61,12 +56,7 @@ public class LocalFileStorage implements FileStorage {
 		}
 	}
 
-	@Override
-	public String getUrl(String path) {
-		return URL_PREFIX + path;
-	}
-
-	@Override
+	/** 获取文件资源,用于下载响应(不存在抛 404) */
 	public Resource getResource(String path) {
 		Path target = resolve(path);
 		if (!Files.exists(target)) {

@@ -6,14 +6,14 @@ import com.helmsail.databuddy.exception.BusinessException;
 import com.helmsail.databuddy.exception.ErrorCode;
 
 /**
- * 切分策略类型(agent_biz_document.splitter_type 存 name();按内容形态选用,一个值对应 splitter 子包一个实现类)
+ * 切分策略类型(agent_biz_document.splitter_type 存 name();按内容形态选用,一个值对应 impl 子包一个实现类)
  */
 public enum SplitterType {
 
 	/** 整段不切:已组装好的短文本(业务表 / 术语 / QA) */
 	WHOLE,
 
-	/** 段落:按空行成段,小段合并、超长硬切(中文业务文档主力策略) */
+	/** 段落:按空行成段,小段合并;超长段降级链(单换行→句界回退)兜底(中文业务文档主力策略) */
 	PARAGRAPH,
 
 	/** 标题:按 Markdown 标题成块,标题保留为上下文(md 与结构化文档) */

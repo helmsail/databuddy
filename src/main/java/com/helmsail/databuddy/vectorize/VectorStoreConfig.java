@@ -1,6 +1,5 @@
 package com.helmsail.databuddy.vectorize;
 
-import org.springframework.ai.embedding.EmbeddingModel;
 import org.springframework.ai.vectorstore.SimpleVectorStore;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.context.annotation.Bean;
@@ -15,10 +14,17 @@ import com.helmsail.databuddy.aimodel.AiModelServiceFactory;
 @Configuration
 public class VectorStoreConfig {
 
+	/**
+	 * 委托实例单独成 bean:VectorStore 与向量业务共用同一门面(工厂抽象不外泄);
+	 * 这是容器内唯一的 EmbeddingModel 类型 bean——未来引入外部嵌入 starter 时留意类型歧义
+	 */
 	@Bean
-	public VectorStore vectorStore(AiModelServiceFactory aiModelServiceFactory) {
-		// 刻意手动 new、不注册为 bean:容器里不出现 EmbeddingModel 类型,避免与未来的外部嵌入 bean 冲突
-		EmbeddingModel embeddingModel = new DelegatingEmbeddingModel(aiModelServiceFactory);
+	public DelegatingEmbeddingModel delegatingEmbeddingModel(AiModelServiceFactory aiModelServiceFactory) {
+		return new DelegatingEmbeddingModel(aiModelServiceFactory);
+	}
+
+	@Bean
+	public VectorStore vectorStore(DelegatingEmbeddingModel embeddingModel) {
 		return SimpleVectorStore.builder(embeddingModel).build();
 	}
 

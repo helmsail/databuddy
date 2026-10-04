@@ -17,7 +17,8 @@ import com.helmsail.databuddy.bizdatabase.jdbc.model.ColumnMeta;
 import com.helmsail.databuddy.bizdatabase.jdbc.model.TableMeta;
 import com.helmsail.databuddy.exception.BusinessException;
 import com.helmsail.databuddy.exception.ErrorCode;
-import com.helmsail.databuddy.vectorize.IndexSourceType;
+import com.helmsail.databuddy.vectorize.DelegatingEmbeddingModel;
+import com.helmsail.databuddy.vectorize.KnowledgeType;
 import com.helmsail.databuddy.vectorize.VectorService;
 import com.helmsail.databuddy.vectorize.splitter.SplitterType;
 
@@ -43,12 +44,16 @@ public class AgentBizTableService {
 
 	private final VectorService vectorService;
 
+	/** 委托门面:取当前模型名(删除只清现役分区) */
+	private final DelegatingEmbeddingModel embeddingModel;
+
 	public AgentBizTableService(AgentBizTableMapper mapper, AgentMapper agentMapper,
-			BizDatabaseService bizDatabaseService, VectorService vectorService) {
+			BizDatabaseService bizDatabaseService, VectorService vectorService, DelegatingEmbeddingModel embeddingModel) {
 		this.mapper = mapper;
 		this.agentMapper = agentMapper;
 		this.bizDatabaseService = bizDatabaseService;
 		this.vectorService = vectorService;
+		this.embeddingModel = embeddingModel;
 	}
 
 	/** 某 agent 的绑定清单(含向量化状态) */
@@ -106,7 +111,7 @@ public class AgentBizTableService {
 				continue;
 			}
 			mapper.deleteById(row.getId());
-			vectorService.deleteBySource(agentId, IndexSourceType.BIZ_TABLE, row.getId());
+			vectorService.deleteByDims(agentId, embeddingModel.modelName(), KnowledgeType.TABLE, row.getId());
 		}
 		log.info("表解绑完成: agent={}, 请求 {} 张", agentId, ids.size());
 	}
@@ -147,7 +152,7 @@ public class AgentBizTableService {
 				String tableComment = tableComment(commentsByConfig, row.getDatabaseConfigId(), row.getTableName());
 				List<ColumnMeta> columns = bizDatabaseService.listColumns(row.getDatabaseConfigId(), row.getTableName());
 				String content = buildContent(row.getTableName(), tableComment, columns);
-				vectorService.index(agentId, IndexSourceType.BIZ_TABLE, row.getId(), SplitterType.WHOLE, content);
+				vectorService.index(agentId, KnowledgeType.TABLE, row.getId(), SplitterType.WHOLE, content);
 				mapper.updateSyncStatus(row.getId(), EmbeddingStatus.SYNCED, null);
 				synced++;
 			}

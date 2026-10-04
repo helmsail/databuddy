@@ -1,6 +1,6 @@
 package com.helmsail.databuddy.graph.knowledge;
 
-import java.util.EnumSet;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
@@ -20,7 +20,7 @@ import com.helmsail.databuddy.aimodel.AiModelServiceFactory;
 import com.helmsail.databuddy.graph.GraphKeys;
 import com.helmsail.databuddy.graph.util.NodeUtils;
 import com.helmsail.databuddy.prompt.NodePromptTemplateMapper;
-import com.helmsail.databuddy.vectorize.IndexSourceType;
+import com.helmsail.databuddy.vectorize.KnowledgeType;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -38,9 +38,9 @@ public class KnowledgeRecallNode implements AsyncNodeAction {
 	/** 召回条数上限 */
 	private static final int TOP_K = 5;
 
-	/** 知识源(与表块分工:表块归后续 Schema 召回) */
-	private static final EnumSet<IndexSourceType> KNOWLEDGE_SOURCES = EnumSet.of(IndexSourceType.BIZ_TERM,
-			IndexSourceType.QA, IndexSourceType.DOCUMENT);
+	/** 召回的知识类型(与表块分工:表块归后续 Schema 召回;逐类型依次检索,各得独立 topK) */
+	private static final List<KnowledgeType> KNOWLEDGE_TYPES = List.of(KnowledgeType.TERM, KnowledgeType.QA,
+			KnowledgeType.DOCUMENT);
 
 	private final NodePromptTemplateMapper promptMapper;
 
@@ -65,7 +65,10 @@ public class KnowledgeRecallNode implements AsyncNodeAction {
 		String history = state.value(GraphKeys.HISTORY, String.class).orElse("(无)");
 		long agentId = NodeUtils.longOf(state, GraphKeys.AGENT_ID);
 		String query = rewrite(input, history);
-		List<RetrievedChunk> hits = agentService.retrieve(agentId, query, TOP_K, KNOWLEDGE_SOURCES);
+		List<RetrievedChunk> hits = new ArrayList<>();
+		for (KnowledgeType type : KNOWLEDGE_TYPES) {
+			hits.addAll(agentService.retrieve(agentId, query, TOP_K, type));
+		}
 		log.info("知识召回: agent={}, 重写查询=\"{}\", 命中 {} 条", agentId, query, hits.size());
 		return CompletableFuture.completedFuture(Map.of(GraphKeys.KNOWLEDGE, format(hits), GraphKeys.NODE_STATUS,
 				hits.isEmpty() ? "知识召回完成:未命中相关知识" : "知识召回完成:命中 " + hits.size() + " 条"));
@@ -90,7 +93,7 @@ public class KnowledgeRecallNode implements AsyncNodeAction {
 		return input;
 	}
 
-	/** 命中块 → 带来源标注的知识文本(编号列出;回源字段随来源补注) */
+	/** 命中块 → 带知识类型标注的知识文本(编号列出;回源字段随条目补注) */
 	private String format(List<RetrievedChunk> hits) {
 		if (hits.isEmpty()) {
 			return "无";
@@ -98,12 +101,12 @@ public class KnowledgeRecallNode implements AsyncNodeAction {
 		StringBuilder sb = new StringBuilder();
 		for (int i = 0; i < hits.size(); i++) {
 			RetrievedChunk hit = hits.get(i);
-			sb.append(i + 1).append(". ").append(prefix(hit)).append(hit.content());
-			Object answer = hit.extra().get("answer");
+			sb.append(i + 1).append(". ").append(prefix(hit)).append(hit.getContent());
+			Object answer = hit.getExtra().get("answer");
 			if (answer != null) {
 				sb.append(" A: ").append(answer);
 			}
-			Object name = hit.extra().get("name");
+			Object name = hit.getExtra().get("name");
 			if (name != null) {
 				sb.append(" (文档: ").append(name).append(')');
 			}
@@ -112,13 +115,13 @@ public class KnowledgeRecallNode implements AsyncNodeAction {
 		return sb.toString().trim();
 	}
 
-	/** 来源前缀 */
+	/** 知识类型前缀 */
 	private String prefix(RetrievedChunk hit) {
-		return switch (hit.sourceType()) {
-			case BIZ_TERM -> "[术语] ";
+		return switch (hit.getKnowledgeType()) {
+			case TERM -> "[术语] ";
 			case QA -> "[问答] Q: ";
 			case DOCUMENT -> "[文档] ";
-			default -> "[" + hit.sourceType().name() + "] ";
+			default -> "[" + hit.getKnowledgeType().name() + "] ";
 		};
 	}
 

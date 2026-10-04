@@ -3,7 +3,7 @@ package com.helmsail.databuddy.vectorize.splitter;
 import java.util.List;
 
 /**
- * 文档切分器:一种策略一个实现,由 DocumentSplitterFactory 按类型派发(与方言工厂同构)
+ * 文档切分器:一种策略一个实现(统一在 impl 子包),由 DocumentSplitterFactory 按类型派发(与方言工厂同构)
  */
 public interface DocumentSplitter {
 

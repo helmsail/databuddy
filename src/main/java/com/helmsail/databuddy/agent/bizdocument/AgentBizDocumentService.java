@@ -24,10 +24,9 @@ import com.helmsail.databuddy.agent.AgentMapper;
 import com.helmsail.databuddy.agent.EmbeddingStatus;
 import com.helmsail.databuddy.exception.BusinessException;
 import com.helmsail.databuddy.exception.ErrorCode;
-import com.helmsail.databuddy.storage.FileStorage;
-import com.helmsail.databuddy.storage.FileStorageFactory;
-import com.helmsail.databuddy.storage.StorageType;
-import com.helmsail.databuddy.vectorize.IndexSourceType;
+import com.helmsail.databuddy.storage.LocalFileStorage;
+import com.helmsail.databuddy.vectorize.DelegatingEmbeddingModel;
+import com.helmsail.databuddy.vectorize.KnowledgeType;
 import com.helmsail.databuddy.vectorize.VectorService;
 import com.helmsail.databuddy.vectorize.splitter.SplitterType;
 
@@ -37,7 +36,7 @@ import reactor.core.scheduler.Schedulers;
 
 /**
  * 文档服务:agent_biz_document 行的生命周期(上传 / 修改 / 删除 / 列表)与向量化。
- * 三库联动:文件本体走 storage 包(FileStorageFactory 按 storage_type 分发),行落系统库,文本按 splitter_type 切分入向量库;
+ * 三库联动:文件本体走 storage 包(本地落盘),行落系统库,文本按 splitter_type 切分入向量库;
  * 文本获取:markdown 直读保结构,其余格式经 Tika 提取(自动识别编码、去 HTML 标签,提取为空按失败处理);
  * 上传与策略变更异步处理(落行 PENDING → worker 后台跑,立即返回),失败落库待手动 retryUnsynced 与定时兜底
  */
@@ -51,10 +50,9 @@ public class AgentBizDocumentService {
 	/** 文档存储子目录前缀(相对存储根;按 agent 分目录,与文档名拼出落盘路径) */
 	private static final String SUB_PATH_PREFIX = "docs/";
 
-	/** 可上传的扩展名白名单(文本类 + 常见文档格式;白名单外上传即拒,清单按需手动扩) */
+	/** 可上传的扩展名白名单(最常用:文本 txt/md + pdf/word/excel/ppt;白名单外上传即拒,清单按需手动扩) */
 	private static final Set<String> SUPPORTED_EXTENSIONS = Set.of(
-			"txt", "md", "markdown", "csv", "sql", "json", "xml", "yml", "yaml", "log",
-			"html", "htm", "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "rtf", "odt", "ods", "odp");
+			"txt", "md", "markdown", "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx");
 
 	/** 直读类扩展名(不经 Tika,保留原文:markdown 结构供 MARKDOWN 切分器识别) */
 	private static final Set<String> VERBATIM_EXTENSIONS = Set.of("md", "markdown");
@@ -70,16 +68,20 @@ public class AgentBizDocumentService {
 
 	private final AgentMapper agentMapper;
 
-	private final FileStorageFactory fileStorageFactory;
+	private final LocalFileStorage fileStorage;
 
 	private final VectorService vectorService;
 
+	/** 委托门面:取当前模型名(删除只清现役分区) */
+	private final DelegatingEmbeddingModel embeddingModel;
+
 	public AgentBizDocumentService(AgentBizDocumentMapper mapper, AgentMapper agentMapper,
-			FileStorageFactory fileStorageFactory, VectorService vectorService) {
+			LocalFileStorage fileStorage, VectorService vectorService, DelegatingEmbeddingModel embeddingModel) {
 		this.mapper = mapper;
 		this.agentMapper = agentMapper;
-		this.fileStorageFactory = fileStorageFactory;
+		this.fileStorage = fileStorage;
 		this.vectorService = vectorService;
+		this.embeddingModel = embeddingModel;
 	}
 
 	/** 某 agent 的文档清单 */
@@ -95,24 +97,23 @@ public class AgentBizDocumentService {
 	/** 文档下载:行不存在 404;文件本体经存储读取(不存在由 storage 抛 404) */
 	public DocumentFile download(long id) {
 		AgentBizDocument document = requireDocument(id);
-		Resource resource = fileStorageFactory.get(document.getStorageType()).getResource(document.getStoragePath());
+		Resource resource = fileStorage.getResource(document.getStoragePath());
 		return new DocumentFile(downloadName(document, resource), resource);
 	}
 
 	/**
 	 * 上传文档:预检(agent 存在、名字未占用)→ 文件落存储(按 agent 分目录,落盘名 = 文档名:同名互斥即路径互斥,防同源覆盖)→
 	 * 行落库 → worker 异步切分向量化,立即返回。
-	 * name 缺省取文件名;仅接受白名单扩展名(文本类 + pdf/word/excel/ppt 等常见格式,其余直接拒绝)
+	 * name 缺省取文件名;仅接受白名单扩展名(文本类 + pdf/word/excel/ppt,其余直接拒绝)
 	 */
 	public Mono<AgentBizDocument> upload(long agentId, FilePart filePart, String name, SplitterType splitterType) {
 		String docName = resolveName(name, filePart.filename());
 		validateName(docName);
 		SplitterType type = splitterType == null ? SplitterType.PARAGRAPH : splitterType;
-		FileStorage storage = fileStorageFactory.get(StorageType.LOCAL);
 		return Mono.fromRunnable(() -> precheck(agentId, docName))
 			.subscribeOn(Schedulers.boundedElastic())
-			.then(storage.store(filePart, SUB_PATH_PREFIX + agentId, docName))
-			.flatMap(path -> Mono.fromCallable(() -> insertAndTrigger(agentId, docName, type, path, storage))
+			.then(fileStorage.store(filePart, SUB_PATH_PREFIX + agentId, docName))
+			.flatMap(path -> Mono.fromCallable(() -> insertAndTrigger(agentId, docName, type, path))
 				.subscribeOn(Schedulers.boundedElastic()));
 	}
 
@@ -145,8 +146,8 @@ public class AgentBizDocumentService {
 	public void delete(long id) {
 		AgentBizDocument old = requireDocument(id);
 		mapper.deleteById(id);
-		vectorService.deleteBySource(old.getAgentId(), IndexSourceType.DOCUMENT, id);
-		fileStorageFactory.get(old.getStorageType()).delete(old.getStoragePath());
+		vectorService.deleteByDims(old.getAgentId(), embeddingModel.modelName(), KnowledgeType.DOCUMENT, id);
+		fileStorage.delete(old.getStoragePath());
 		log.info("文档删除: agent={}, name={} (#{})", old.getAgentId(), old.getName(), id);
 	}
 
@@ -201,12 +202,10 @@ public class AgentBizDocumentService {
 	}
 
 	/** 建行并触发后台处理(在文件落盘后调用);建行失败清掉刚落盘的文件,不留孤儿 */
-	private AgentBizDocument insertAndTrigger(long agentId, String docName, SplitterType splitterType, String path,
-			FileStorage storage) {
+	private AgentBizDocument insertAndTrigger(long agentId, String docName, SplitterType splitterType, String path) {
 		AgentBizDocument document = new AgentBizDocument();
 		document.setAgentId(agentId);
 		document.setName(docName);
-		document.setStorageType(storage.type());
 		document.setStoragePath(path);
 		document.setSplitterType(splitterType);
 		document.setEmbeddingStatus(EmbeddingStatus.PENDING);
@@ -218,7 +217,7 @@ public class AgentBizDocumentService {
 			throw new BusinessException(ErrorCode.INVALID_INPUT, "文档已存在: " + docName);
 		}
 		catch (Exception e) {
-			deleteQuietly(storage, path);
+			deleteQuietly(path);
 			throw e;
 		}
 		worker.execute(() -> syncById(document.getId()));
@@ -242,7 +241,7 @@ public class AgentBizDocumentService {
 	private synchronized void syncRow(AgentBizDocument document) {
 		try {
 			String content = readContent(document);
-			vectorService.index(document.getAgentId(), IndexSourceType.DOCUMENT, document.getId(),
+			vectorService.index(document.getAgentId(), KnowledgeType.DOCUMENT, document.getId(),
 					document.getSplitterType(), content);
 			mapper.updateSyncStatus(document.getId(), EmbeddingStatus.SYNCED, null);
 			log.info("文档向量写入: agent={}, name={} (#{})", document.getAgentId(), document.getName(),
@@ -268,8 +267,7 @@ public class AgentBizDocumentService {
 
 	/** 读文件文本:markdown 直读保原文,其余经 Tika 提取(自动识别编码 / 去 HTML 标签);提取为空按失败处理 */
 	private String readContent(AgentBizDocument document) {
-		FileStorage storage = fileStorageFactory.get(document.getStorageType());
-		Resource resource = storage.getResource(document.getStoragePath());
+		Resource resource = fileStorage.getResource(document.getStoragePath());
 		if (VERBATIM_EXTENSIONS.contains(extension(document.getName()))) {
 			try (InputStream in = resource.getInputStream()) {
 				return new String(in.readAllBytes(), StandardCharsets.UTF_8);
@@ -321,9 +319,9 @@ public class AgentBizDocumentService {
 	}
 
 	/** 删除文件失败只告警(用于失败清理路径,不掩盖原始异常) */
-	private void deleteQuietly(FileStorage storage, String path) {
+	private void deleteQuietly(String path) {
 		try {
-			storage.delete(path);
+			fileStorage.delete(path);
 		}
 		catch (Exception e) {
 			log.warn("清理文件失败: {} ({})", path, e.getMessage());

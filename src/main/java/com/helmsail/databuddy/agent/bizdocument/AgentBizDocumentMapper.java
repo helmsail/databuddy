@@ -19,19 +19,19 @@ import com.helmsail.databuddy.vectorize.splitter.SplitterType;
 @Mapper
 public interface AgentBizDocumentMapper {
 
+	/** 全列清单:三处查询共用,加列只改这一处 */
+	String ALL_COLUMNS = "id, agent_id, name, storage_path, splitter_type, embedding_status, error_msg, create_time, update_time";
+
 	/** 某 agent 的文档清单(按 id 升序) */
-	@Select("SELECT id, agent_id, name, storage_type, storage_path, splitter_type, embedding_status, error_msg, create_time, update_time "
-			+ "FROM agent_biz_document WHERE agent_id = #{agentId} ORDER BY id")
+	@Select("SELECT " + ALL_COLUMNS + " FROM agent_biz_document WHERE agent_id = #{agentId} ORDER BY id")
 	List<AgentBizDocument> selectByAgent(@Param("agentId") Long agentId);
 
 	/** 按 id 查;不存在返回 null */
-	@Select("SELECT id, agent_id, name, storage_type, storage_path, splitter_type, embedding_status, error_msg, create_time, update_time "
-			+ "FROM agent_biz_document WHERE id = #{id}")
+	@Select("SELECT " + ALL_COLUMNS + " FROM agent_biz_document WHERE id = #{id}")
 	AgentBizDocument selectById(@Param("id") Long id);
 
 	/** 按 agent + 文档名查(上传前重名预检) */
-	@Select("SELECT id, agent_id, name, storage_type, storage_path, splitter_type, embedding_status, error_msg, create_time, update_time "
-			+ "FROM agent_biz_document WHERE agent_id = #{agentId} AND name = #{name}")
+	@Select("SELECT " + ALL_COLUMNS + " FROM agent_biz_document WHERE agent_id = #{agentId} AND name = #{name}")
 	AgentBizDocument selectByAgentAndName(@Param("agentId") Long agentId, @Param("name") String name);
 
 	/** 存在未同步行(PENDING / FAILED)的 agent 清单(定时兜底扫描用) */
@@ -40,8 +40,8 @@ public interface AgentBizDocumentMapper {
 
 	/** 新增;回填自增 id(create_time/update_time 由数据库默认值维护) */
 	@Options(useGeneratedKeys = true, keyProperty = "id")
-	@Insert("INSERT INTO agent_biz_document (agent_id, name, storage_type, storage_path, splitter_type, embedding_status) "
-			+ "VALUES (#{agentId}, #{name}, #{storageType}, #{storagePath}, #{splitterType}, #{embeddingStatus})")
+	@Insert("INSERT INTO agent_biz_document (agent_id, name, storage_path, splitter_type, embedding_status) "
+			+ "VALUES (#{agentId}, #{name}, #{storagePath}, #{splitterType}, #{embeddingStatus})")
 	void insert(AgentBizDocument document);
 
 	/** 按 id 更新可变字段(文档名 / 切分策略) */

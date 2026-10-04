@@ -10,6 +10,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.codec.multipart.FilePart;
+import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -29,7 +30,12 @@ import com.helmsail.databuddy.agent.biztable.AgentBizTable;
 import com.helmsail.databuddy.agent.biztable.AgentBizTableService;
 import com.helmsail.databuddy.agent.bizterm.AgentBizTerm;
 import com.helmsail.databuddy.agent.bizterm.AgentBizTermService;
+import com.helmsail.databuddy.exception.BusinessException;
+import com.helmsail.databuddy.exception.ErrorCode;
 import com.helmsail.databuddy.result.ApiResponse;
+import com.helmsail.databuddy.vectorize.KnowledgeType;
+import com.helmsail.databuddy.vectorize.VectorPresence;
+import com.helmsail.databuddy.vectorize.VectorService;
 import com.helmsail.databuddy.vectorize.splitter.SplitterType;
 
 import reactor.core.publisher.Mono;
@@ -37,6 +43,7 @@ import reactor.core.scheduler.Schedulers;
 
 /**
  * 智能体入口:agent 本体与检索走 AgentService,四子域管理动作直调各子域 service(域内允许);
+ * 向量分区运维(状态查看 / 按模型回收)直调 VectorService——向量具业务语义,入口归属 agent 端;
  * 只做 HTTP 层,语义全在 service;成功返回统一信封(ApiResponse),错误由全局异常处理器转同形信封。
  * 线程边界:触达模型 / 向量的动作含阻塞式 Spring AI 调用,统一经 reactive/reactiveVoid 移入弹性线程
  * (在 WebFlux 事件循环线程上会被 Reactor 拒绝:block() not supported in thread reactor-http-epoll,已实证)
@@ -56,14 +63,17 @@ public class AgentController {
 
 	private final AgentBizDocumentService agentBizDocumentService;
 
+	private final VectorService vectorService;
+
 	public AgentController(AgentService agentService, AgentBizTableService agentBizTableService,
 			AgentBizTermService agentBizTermService, AgentBizQaService agentBizQaService,
-			AgentBizDocumentService agentBizDocumentService) {
+			AgentBizDocumentService agentBizDocumentService, VectorService vectorService) {
 		this.agentService = agentService;
 		this.agentBizTableService = agentBizTableService;
 		this.agentBizTermService = agentBizTermService;
 		this.agentBizQaService = agentBizQaService;
 		this.agentBizDocumentService = agentBizDocumentService;
+		this.vectorService = vectorService;
 	}
 
 	/**
@@ -129,6 +139,26 @@ public class AgentController {
 			agentBizTermService.rebuildAll(agentId);
 			agentBizQaService.rebuildAll(agentId);
 			agentBizDocumentService.rebuildAll(agentId);
+		});
+	}
+
+	// ============ 向量分区(vectorize) ============
+
+	/** 向量情况:全部 agent × 模型 × 知识类型的存在记录(基于向量库元数据原始包装;失效 agentId 由展示侧对照 agent 列表判定) */
+	@GetMapping("/vectors")
+	public Mono<ApiResponse<List<VectorPresence>>> vectors() {
+		return reactive(vectorService::vectorOverview);
+	}
+
+	/** 手动删除 (agent, 模型, 知识类型) 三维度向量(三维度由外部传入,入参校验在本层;向量操作走弹性线程);data = 删除块数 */
+	@DeleteMapping("/{agentId}/vectors")
+	public Mono<ApiResponse<Integer>> deleteVectors(@PathVariable("agentId") long agentId,
+			@RequestParam("model") String model, @RequestParam("knowledgeType") String knowledgeType) {
+		return reactive(() -> {
+			if (!StringUtils.hasText(model)) {
+				throw new BusinessException(ErrorCode.INVALID_INPUT, "模型名不能为空");
+			}
+			return vectorService.deleteByDims(agentId, model, KnowledgeType.from(knowledgeType), null);
 		});
 	}
 

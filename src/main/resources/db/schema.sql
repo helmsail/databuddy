@@ -135,13 +135,12 @@ CREATE TABLE IF NOT EXISTS agent_biz_qa (
 -- agent 业务文档:一行 = 一份文档;文件本体在 storage 包(本地存储),文本按 splitter_type 切分向量化
 -- 文本获取:markdown 直读保结构,其余格式经 Tika 提取(自动编码识别 / 去 HTML 标签)
 -- 上传异步处理(落行 PENDING → worker 后台切分入向量,失败进兜底重试);扩展名白名单:文本类 + pdf/word/excel/ppt 等常见格式,其余上传即拒
--- storage_type:存储分发键(当前 LOCAL);UNIQUE (agent_id, name):同 agent 下文档名唯一(文件按 agent 目录 + 文件名落盘)
+-- UNIQUE (agent_id, name):同 agent 下文档名唯一(文件按 agent 目录 + 文件名落盘)
 -- splitter_type:切分策略(WHOLE / PARAGRAPH / MARKDOWN / TOKEN);embedding_status:PENDING / SYNCED / FAILED
 CREATE TABLE IF NOT EXISTS agent_biz_document (
 	id               BIGINT AUTO_INCREMENT PRIMARY KEY,
 	agent_id         BIGINT       NOT NULL,
 	name             VARCHAR(256) NOT NULL,
-	storage_type     VARCHAR(16)  NOT NULL DEFAULT 'LOCAL',
 	storage_path     VARCHAR(512) NOT NULL,
 	splitter_type    VARCHAR(16)  NOT NULL DEFAULT 'PARAGRAPH',
 	embedding_status VARCHAR(16)  NOT NULL DEFAULT 'PENDING',

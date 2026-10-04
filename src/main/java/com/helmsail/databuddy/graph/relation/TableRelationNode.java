@@ -1,7 +1,6 @@
 package com.helmsail.databuddy.graph.relation;
 
 import java.util.ArrayList;
-import java.util.EnumSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -20,7 +19,7 @@ import com.helmsail.databuddy.bizdatabase.BizTableRelation;
 import com.helmsail.databuddy.bizdatabase.RelationType;
 import com.helmsail.databuddy.graph.GraphKeys;
 import com.helmsail.databuddy.graph.util.NodeUtils;
-import com.helmsail.databuddy.vectorize.IndexSourceType;
+import com.helmsail.databuddy.vectorize.KnowledgeType;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -33,9 +32,6 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 @Component
 public class TableRelationNode implements AsyncNodeAction {
-
-	/** 补拉来源:表块 */
-	private static final EnumSet<IndexSourceType> TABLE_SOURCE = EnumSet.of(IndexSourceType.BIZ_TABLE);
 
 	private final AgentService agentService;
 
@@ -63,7 +59,7 @@ public class TableRelationNode implements AsyncNodeAction {
 				continue;
 			}
 			pulledNames.add(missing);
-			pulledContents.add(chunk.content());
+			pulledContents.add(chunk.getContent());
 			finalTables.add(missing);
 		}
 		List<String> relationLines = relations.stream()
@@ -106,12 +102,12 @@ public class TableRelationNode implements AsyncNodeAction {
 
 	/** 按表名精确重召回:命中块的解析名必须与请求名一致才算数(防语义漂移) */
 	private RetrievedChunk recallByName(long agentId, String tableName) {
-		List<RetrievedChunk> hits = agentService.retrieve(agentId, tableName, 1, TABLE_SOURCE);
+		List<RetrievedChunk> hits = agentService.retrieve(agentId, tableName, 1, KnowledgeType.TABLE);
 		if (hits.isEmpty()) {
 			return null;
 		}
 		RetrievedChunk hit = hits.get(0);
-		return tableName.equals(NodeUtils.parseTableName(hit.content())) ? hit : null;
+		return tableName.equals(NodeUtils.parseTableName(hit.getContent())) ? hit : null;
 	}
 
 	/** 关系一行:order_main.id = order_item.order_id(1:N) */

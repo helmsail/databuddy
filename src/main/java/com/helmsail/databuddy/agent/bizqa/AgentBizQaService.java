@@ -11,7 +11,8 @@ import com.helmsail.databuddy.agent.AgentMapper;
 import com.helmsail.databuddy.agent.EmbeddingStatus;
 import com.helmsail.databuddy.exception.BusinessException;
 import com.helmsail.databuddy.exception.ErrorCode;
-import com.helmsail.databuddy.vectorize.IndexSourceType;
+import com.helmsail.databuddy.vectorize.DelegatingEmbeddingModel;
+import com.helmsail.databuddy.vectorize.KnowledgeType;
 import com.helmsail.databuddy.vectorize.VectorService;
 import com.helmsail.databuddy.vectorize.splitter.SplitterType;
 
@@ -35,10 +36,15 @@ public class AgentBizQaService {
 
 	private final VectorService vectorService;
 
-	public AgentBizQaService(AgentBizQaMapper mapper, AgentMapper agentMapper, VectorService vectorService) {
+	/** 委托门面:取当前模型名(删除只清现役分区) */
+	private final DelegatingEmbeddingModel embeddingModel;
+
+	public AgentBizQaService(AgentBizQaMapper mapper, AgentMapper agentMapper, VectorService vectorService,
+			DelegatingEmbeddingModel embeddingModel) {
 		this.mapper = mapper;
 		this.agentMapper = agentMapper;
 		this.vectorService = vectorService;
+		this.embeddingModel = embeddingModel;
 	}
 
 	/** 某 agent 的问答清单 */
@@ -94,7 +100,7 @@ public class AgentBizQaService {
 	public void delete(long id) {
 		AgentBizQa old = requireQa(id);
 		mapper.deleteById(id);
-		vectorService.deleteBySource(old.getAgentId(), IndexSourceType.QA, id);
+		vectorService.deleteByDims(old.getAgentId(), embeddingModel.modelName(), KnowledgeType.QA, id);
 		log.info("问答删除: agent={}, question={} (#{})", old.getAgentId(), old.getQuestion(), id);
 	}
 
@@ -136,7 +142,7 @@ public class AgentBizQaService {
 	private void syncRow(AgentBizQa qa) {
 		try {
 			String content = buildContent(qa);
-			vectorService.index(qa.getAgentId(), IndexSourceType.QA, qa.getId(), SplitterType.WHOLE, content);
+			vectorService.index(qa.getAgentId(), KnowledgeType.QA, qa.getId(), SplitterType.WHOLE, content);
 			mapper.updateSyncStatus(qa.getId(), EmbeddingStatus.SYNCED, null);
 			qa.setEmbeddingStatus(EmbeddingStatus.SYNCED);
 			qa.setErrorMsg(null);

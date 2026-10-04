@@ -40,7 +40,7 @@ public class AiModelConfigService {
 		return mapper.selectAll();
 	}
 
-	/** 全部 EMBEDDING 配置的模型名(含未激活备用行;供向量孤儿分区清理判定"存活"——配置还在就不算孤儿) */
+	/** 全部 EMBEDDING 配置的模型名(含未激活备用行;删除配置后判定该模型名是否还有行——没有则提示其向量分区待回收) */
 	public List<String> embeddingModelNames() {
 		return mapper.selectAll().stream()
 			.filter(config -> config.getModelType() == AiModelType.EMBEDDING)
@@ -116,7 +116,7 @@ public class AiModelConfigService {
 		factory.testConnection(config);
 	}
 
-	/** 删除配置:激活中的行删除 = 同时停用(清运行时实例);EMBEDDING 最后一行删除 = 向量分区将成孤儿(下次清理回收,重添配置可保住) */
+	/** 删除配置:激活中的行删除 = 同时停用(清运行时实例);EMBEDDING 最后一行删除 = 其向量分区待手动回收(向量运维台删除;重添配置即可保住) */
 	public synchronized void delete(Long id) {
 		AiModelConfig config = mapper.selectById(id);
 		if (config == null) {
@@ -132,7 +132,7 @@ public class AiModelConfigService {
 			log.info("模型配置已删除: id={}, type={}, model={}", id, config.getModelType(), config.getModelName());
 		}
 		if (config.getModelType() == AiModelType.EMBEDDING && !embeddingModelNames().contains(config.getModelName())) {
-			log.info("模型 {} 已无配置;其向量分区将在下次清理时回收(如需保留,重新添加同名配置即可)", config.getModelName());
+			log.info("模型 {} 已无配置;其向量分区待手动回收(向量运维台;如需保留,重新添加同名配置即可)", config.getModelName());
 		}
 	}
 

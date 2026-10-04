@@ -3,13 +3,12 @@ package com.helmsail.databuddy.agent.bizdocument;
 import java.time.LocalDateTime;
 
 import com.helmsail.databuddy.agent.EmbeddingStatus;
-import com.helmsail.databuddy.storage.StorageType;
 import com.helmsail.databuddy.vectorize.splitter.SplitterType;
 
 import lombok.Data;
 
 /**
- * agent 业务文档(一行 = 一份文档);文件本体在 storage 包(路径与类型存本表),上传后异步切分向量化
+ * agent 业务文档(一行 = 一份文档);文件本体在 storage 包(路径存本表),上传后异步切分向量化
  */
 @Data
 public class AgentBizDocument {
@@ -22,9 +21,6 @@ public class AgentBizDocument {
 
 	/** 文档名(同 agent 下唯一;缺省为上传文件名,可改名) */
 	private String name;
-
-	/** 存储类型(FileStorage 分发键,当前 LOCAL) */
-	private StorageType storageType;
 
 	/** 存储路径(相对存储根,如 docs/1/合同.txt) */
 	private String storagePath;

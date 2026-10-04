@@ -11,7 +11,8 @@ import com.helmsail.databuddy.agent.AgentMapper;
 import com.helmsail.databuddy.agent.EmbeddingStatus;
 import com.helmsail.databuddy.exception.BusinessException;
 import com.helmsail.databuddy.exception.ErrorCode;
-import com.helmsail.databuddy.vectorize.IndexSourceType;
+import com.helmsail.databuddy.vectorize.DelegatingEmbeddingModel;
+import com.helmsail.databuddy.vectorize.KnowledgeType;
 import com.helmsail.databuddy.vectorize.VectorService;
 import com.helmsail.databuddy.vectorize.splitter.SplitterType;
 
@@ -35,10 +36,15 @@ public class AgentBizTermService {
 
 	private final VectorService vectorService;
 
-	public AgentBizTermService(AgentBizTermMapper mapper, AgentMapper agentMapper, VectorService vectorService) {
+	/** 委托门面:取当前模型名(删除只清现役分区) */
+	private final DelegatingEmbeddingModel embeddingModel;
+
+	public AgentBizTermService(AgentBizTermMapper mapper, AgentMapper agentMapper, VectorService vectorService,
+			DelegatingEmbeddingModel embeddingModel) {
 		this.mapper = mapper;
 		this.agentMapper = agentMapper;
 		this.vectorService = vectorService;
+		this.embeddingModel = embeddingModel;
 	}
 
 	/** 某 agent 的术语清单 */
@@ -92,7 +98,7 @@ public class AgentBizTermService {
 	public void delete(long id) {
 		AgentBizTerm old = requireTerm(id);
 		mapper.deleteById(id);
-		vectorService.deleteBySource(old.getAgentId(), IndexSourceType.BIZ_TERM, id);
+		vectorService.deleteByDims(old.getAgentId(), embeddingModel.modelName(), KnowledgeType.TERM, id);
 		log.info("术语删除: agent={}, term={} (#{})", old.getAgentId(), old.getBusinessTerm(), id);
 	}
 
@@ -134,7 +140,7 @@ public class AgentBizTermService {
 	private void syncRow(AgentBizTerm term) {
 		try {
 			String content = buildContent(term);
-			vectorService.index(term.getAgentId(), IndexSourceType.BIZ_TERM, term.getId(), SplitterType.WHOLE, content);
+			vectorService.index(term.getAgentId(), KnowledgeType.TERM, term.getId(), SplitterType.WHOLE, content);
 			mapper.updateSyncStatus(term.getId(), EmbeddingStatus.SYNCED, null);
 			term.setEmbeddingStatus(EmbeddingStatus.SYNCED);
 			term.setErrorMsg(null);

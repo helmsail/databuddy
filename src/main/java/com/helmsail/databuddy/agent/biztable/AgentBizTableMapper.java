@@ -18,9 +18,11 @@ import com.helmsail.databuddy.agent.EmbeddingStatus;
 @Mapper
 public interface AgentBizTableMapper {
 
+	/** 全列清单:加列只改这一处 */
+	String ALL_COLUMNS = "id, agent_id, database_config_id, table_name, embedding_status, error_msg, create_time, update_time";
+
 	/** 某 agent 的全部绑定行(按 id 升序 = 绑定先后) */
-	@Select("SELECT id, agent_id, database_config_id, table_name, embedding_status, error_msg, create_time, update_time "
-			+ "FROM agent_biz_table WHERE agent_id = #{agentId} ORDER BY id")
+	@Select("SELECT " + ALL_COLUMNS + " FROM agent_biz_table WHERE agent_id = #{agentId} ORDER BY id")
 	List<AgentBizTable> selectByAgent(@Param("agentId") Long agentId);
 
 	/** 存在未同步行(PENDING / FAILED)的 agent 清单(定时兜底扫描用) */

@@ -27,7 +27,7 @@ import com.helmsail.databuddy.bizdatabase.jdbc.config.DbType;
 import com.helmsail.databuddy.exception.BusinessException;
 import com.helmsail.databuddy.exception.ErrorCode;
 import com.helmsail.databuddy.session.SessionService;
-import com.helmsail.databuddy.vectorize.IndexSourceType;
+import com.helmsail.databuddy.vectorize.KnowledgeType;
 import com.helmsail.databuddy.vectorize.VectorMetadata;
 import com.helmsail.databuddy.vectorize.VectorService;
 
@@ -118,30 +118,30 @@ public class AgentService {
 			agentBizDocumentService.delete(document.getId());
 		}
 		sessionService.deleteByAgent(id);   // 会话域:行 + 消息
-		vectorService.deleteByAgent(id);   // 兜底:清残留向量(防历史脏数据)
+		vectorService.deleteByDims(id, null, null, null);   // 兜底:清残留向量(防历史脏数据)
 		agentMapper.deleteById(id);
 		log.info("agent 删除(级联): {} (#{})", agent.getName(), id);
 	}
 
 	/**
-	 * 检索:跨四类来源向量命中,再按来源回源补齐(QA 补答案、文档补名称;术语与表块内容自足)。
+	 * 检索:跨四类知识向量命中,再按知识条目回源补齐(QA 补答案、文档补名称;术语与表块内容自足)。
 	 * 供域外(图节点等)消费;只回结构化块,上下文成文由调用方做
 	 */
 	public List<RetrievedChunk> retrieve(long agentId, String query, int topK) {
 		return retrieve(agentId, query, topK, null);
 	}
 
-	/** 检索(限定来源类型;sourceTypes 空 = 全部来源):知识召回只取知识源,表块归 Schema 召回 */
-	public List<RetrievedChunk> retrieve(long agentId, String query, int topK, Collection<IndexSourceType> sourceTypes) {
+	/** 检索(限定单一知识类型;knowledgeType 空 = 全部类型):召回按类型逐次调用、各得独立 topK;表块归 Schema 召回 */
+	public List<RetrievedChunk> retrieve(long agentId, String query, int topK, KnowledgeType knowledgeType) {
 		requireAgent(agentId);
-		List<Document> hits = vectorService.search(agentId, query, topK, sourceTypes);
+		List<Document> hits = vectorService.search(agentId, query, topK, knowledgeType);
 		List<RetrievedChunk> chunks = new ArrayList<>(hits.size());
 		for (Document hit : hits) {
-			IndexSourceType sourceType = IndexSourceType.valueOf(metadata(hit, VectorMetadata.SOURCE_TYPE));
-			long sourceId = metadataLong(hit, VectorMetadata.SOURCE_ID);
+			KnowledgeType hitType = KnowledgeType.valueOf(metadata(hit, VectorMetadata.KNOWLEDGE_TYPE));
+			long knowledgeId = metadataLong(hit, VectorMetadata.KNOWLEDGE_ID);
 			Double score = hit.getScore();
-			chunks.add(new RetrievedChunk(sourceType, sourceId, score == null ? 0d : score, hit.getText(),
-					extra(sourceType, sourceId)));
+			chunks.add(new RetrievedChunk(hitType, knowledgeId, score == null ? 0d : score, hit.getText(),
+					extra(hitType, knowledgeId)));
 		}
 		return chunks;
 	}
@@ -206,17 +206,17 @@ public class AgentService {
 		return dbType == DbType.MYSQL ? "MySQL" : dbType.name();
 	}
 
-	/** 回源补齐:按来源取本行"不在向量里"的字段(QA 答案 / 文档名);行已删则空表 */
-	private Map<String, Object> extra(IndexSourceType sourceType, long sourceId) {
-		switch (sourceType) {
+	/** 回源补齐:按知识类型取本行"不在向量里"的字段(QA 答案 / 文档名);行已删则空表 */
+	private Map<String, Object> extra(KnowledgeType knowledgeType, long knowledgeId) {
+		switch (knowledgeType) {
 			case QA -> {
-				AgentBizQa qa = agentBizQaService.get(sourceId);
+				AgentBizQa qa = agentBizQaService.get(knowledgeId);
 				if (qa != null && StringUtils.hasText(qa.getContent())) {
 					return Map.of("answer", qa.getContent());
 				}
 			}
 			case DOCUMENT -> {
-				AgentBizDocument document = agentBizDocumentService.get(sourceId);
+				AgentBizDocument document = agentBizDocumentService.get(knowledgeId);
 				if (document != null) {
 					return Map.of("name", document.getName());
 				}

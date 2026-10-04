@@ -1,4 +1,4 @@
-package com.helmsail.databuddy.vectorize.splitter;
+package com.helmsail.databuddy.vectorize.splitter.impl;
 
 import java.util.List;
 
@@ -7,8 +7,12 @@ import org.springframework.ai.transformer.splitter.TokenTextSplitter;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
+import com.helmsail.databuddy.vectorize.splitter.DocumentSplitter;
+import com.helmsail.databuddy.vectorize.splitter.SplitterType;
+
 /**
- * Token 切分:基于 Spring AI TokenTextSplitter 默认参数(约 800 token/块,块间重叠)
+ * Token 切分:基于 Spring AI TokenTextSplitter 默认参数(块上限约 800 token;
+ * 回退标点仅 . ? ! 与换行,中文标点不参与;切点后的残余顺延到下一块)
  */
 @Component
 public class TokenSplitter implements DocumentSplitter {

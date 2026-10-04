@@ -18,14 +18,15 @@ import com.helmsail.databuddy.agent.EmbeddingStatus;
 @Mapper
 public interface AgentBizQaMapper {
 
+	/** 全列清单:两处查询共用,加列只改这一处 */
+	String ALL_COLUMNS = "id, agent_id, question, content, embedding_status, error_msg, create_time, update_time";
+
 	/** 某 agent 的问答清单(按 id 升序) */
-	@Select("SELECT id, agent_id, question, content, embedding_status, error_msg, create_time, update_time "
-			+ "FROM agent_biz_qa WHERE agent_id = #{agentId} ORDER BY id")
+	@Select("SELECT " + ALL_COLUMNS + " FROM agent_biz_qa WHERE agent_id = #{agentId} ORDER BY id")
 	List<AgentBizQa> selectByAgent(@Param("agentId") Long agentId);
 
 	/** 按 id 查;不存在返回 null */
-	@Select("SELECT id, agent_id, question, content, embedding_status, error_msg, create_time, update_time "
-			+ "FROM agent_biz_qa WHERE id = #{id}")
+	@Select("SELECT " + ALL_COLUMNS + " FROM agent_biz_qa WHERE id = #{id}")
 	AgentBizQa selectById(@Param("id") Long id);
 
 	/** 存在未同步行(PENDING / FAILED)的 agent 清单(定时兜底扫描用) */

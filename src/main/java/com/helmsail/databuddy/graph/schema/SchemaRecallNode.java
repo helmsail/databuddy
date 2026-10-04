@@ -1,7 +1,6 @@
 package com.helmsail.databuddy.graph.schema;
 
 import java.util.ArrayList;
-import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
@@ -16,7 +15,7 @@ import com.helmsail.databuddy.agent.AgentService;
 import com.helmsail.databuddy.agent.RetrievedChunk;
 import com.helmsail.databuddy.graph.GraphKeys;
 import com.helmsail.databuddy.graph.util.NodeUtils;
-import com.helmsail.databuddy.vectorize.IndexSourceType;
+import com.helmsail.databuddy.vectorize.KnowledgeType;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -32,9 +31,6 @@ public class SchemaRecallNode implements AsyncNodeAction {
 
 	/** 召回条数上限(整表一块,即最多召回的表的张数;偏宁多勿漏,关系补拉再兜底) */
 	private static final int TOP_K = 8;
-
-	/** 表块来源(知识源归知识召回,表块归本节点) */
-	private static final EnumSet<IndexSourceType> TABLE_SOURCE = EnumSet.of(IndexSourceType.BIZ_TABLE);
 
 	/** 未命中终止语(用户可见) */
 	private static final String NO_TABLE_MESSAGE = "未检索到与问题相关的数据表,本轮分析无法继续。"
@@ -52,7 +48,7 @@ public class SchemaRecallNode implements AsyncNodeAction {
 		String canonical = state.value(GraphKeys.CANONICAL_QUERY, String.class)
 			.orElse(state.value(GraphKeys.INPUT, String.class).orElse(""));
 		long agentId = NodeUtils.longOf(state, GraphKeys.AGENT_ID);
-		List<RetrievedChunk> tables = agentService.retrieve(agentId, canonical, TOP_K, TABLE_SOURCE);
+		List<RetrievedChunk> tables = agentService.retrieve(agentId, canonical, TOP_K, KnowledgeType.TABLE);
 		if (tables.isEmpty()) {
 			log.warn("Schema 召回未命中: agent={}, 查询=\"{}\"", agentId, canonical);
 			return CompletableFuture.completedFuture(Map.of(GraphKeys.SCHEMA, "无", GraphKeys.RECALLED_TABLES, List.of(),
@@ -68,7 +64,7 @@ public class SchemaRecallNode implements AsyncNodeAction {
 	private String join(List<RetrievedChunk> tables) {
 		StringBuilder schema = new StringBuilder();
 		for (RetrievedChunk table : tables) {
-			schema.append(table.content()).append('\n');
+			schema.append(table.getContent()).append('\n');
 		}
 		return schema.toString().trim();
 	}
@@ -77,7 +73,7 @@ public class SchemaRecallNode implements AsyncNodeAction {
 	private List<String> names(List<RetrievedChunk> tables) {
 		List<String> names = new ArrayList<>(tables.size());
 		for (RetrievedChunk table : tables) {
-			String name = NodeUtils.parseTableName(table.content());
+			String name = NodeUtils.parseTableName(table.getContent());
 			if (name != null) {
 				names.add(name);
 			}

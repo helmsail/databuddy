@@ -1,9 +1,12 @@
-package com.helmsail.databuddy.vectorize.splitter;
+package com.helmsail.databuddy.vectorize.splitter.impl;
 
 import java.util.List;
 
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
+
+import com.helmsail.databuddy.vectorize.splitter.DocumentSplitter;
+import com.helmsail.databuddy.vectorize.splitter.SplitterType;
 
 /**
  * 整段切分:输入即一块,不做任何切分;用于已组装好的短文本(业务表 / 术语 / QA)
