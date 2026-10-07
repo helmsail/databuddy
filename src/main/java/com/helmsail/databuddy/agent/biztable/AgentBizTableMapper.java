@@ -18,16 +18,8 @@ import com.helmsail.databuddy.agent.EmbeddingStatus;
 @Mapper
 public interface AgentBizTableMapper {
 
-	/** 全列清单:加列只改这一处 */
+	/** 全列清单:两处查询共用,加列只改这一处 */
 	String ALL_COLUMNS = "id, agent_id, database_config_id, table_name, embedding_status, error_msg, create_time, update_time";
-
-	/** 某 agent 的全部绑定行(按 id 升序 = 绑定先后) */
-	@Select("SELECT " + ALL_COLUMNS + " FROM agent_biz_table WHERE agent_id = #{agentId} ORDER BY id")
-	List<AgentBizTable> selectByAgent(@Param("agentId") Long agentId);
-
-	/** 存在未同步行(PENDING / FAILED)的 agent 清单(定时兜底扫描用) */
-	@Select("SELECT DISTINCT agent_id FROM agent_biz_table WHERE embedding_status <> 'SYNCED'")
-	List<Long> selectAgentIdsUnsynced();
 
 	/** 新增绑定行;回填自增 id(create_time/update_time 由数据库默认值维护) */
 	@Options(useGeneratedKeys = true, keyProperty = "id")
@@ -35,13 +27,24 @@ public interface AgentBizTableMapper {
 			+ "VALUES (#{agentId}, #{databaseConfigId}, #{tableName}, #{embeddingStatus})")
 	void insert(AgentBizTable row);
 
-	/** 更新同步结果:成功置 SYNCED 时 errorMsg 传 null 清空原因 */
-	@Update("UPDATE agent_biz_table SET embedding_status = #{status}, error_msg = #{errorMsg} WHERE id = #{id}")
-	void updateSyncStatus(@Param("id") Long id, @Param("status") EmbeddingStatus status,
-			@Param("errorMsg") String errorMsg);
+	/** 按 agent + id 删除(物理删) */
+	@Delete("DELETE FROM agent_biz_table WHERE agent_id = #{agentId} AND id = #{id}")
+	void deleteById(@Param("agentId") Long agentId, @Param("id") Long id);
 
-	/** 按 id 删除(物理删) */
-	@Delete("DELETE FROM agent_biz_table WHERE id = #{id}")
-	void deleteById(@Param("id") Long id);
+	/** 某 agent 的全部绑定行(按 id 升序 = 绑定先后) */
+	@Select("SELECT " + ALL_COLUMNS + " FROM agent_biz_table WHERE agent_id = #{agentId} ORDER BY id")
+	List<AgentBizTable> selectByAgent(@Param("agentId") Long agentId);
+
+	/** 状态回执(CAS):仅当行仍为 from 态才落入 to 态,返回影响行数(0 = 状态已变或行已删);成功传 null 清原因 */
+	@Update("UPDATE agent_biz_table SET embedding_status = #{to}, error_msg = #{errorMsg} "
+			+ "WHERE agent_id = #{agentId} AND id = #{id} AND embedding_status = #{from}")
+	int updateSyncStatus(@Param("agentId") Long agentId, @Param("id") Long id, @Param("from") EmbeddingStatus from,
+			@Param("to") EmbeddingStatus to, @Param("errorMsg") String errorMsg);
+
+	/** 某 agent 指定状态的绑定行(重试 / 定时兜底 / 状态分类共用:要哪个状态传哪个) */
+	@Select("SELECT " + ALL_COLUMNS + " FROM agent_biz_table "
+			+ "WHERE agent_id = #{agentId} AND embedding_status = #{status} ORDER BY id")
+	List<AgentBizTable> selectByAgentAndStatus(@Param("agentId") Long agentId,
+			@Param("status") EmbeddingStatus status);
 
 }

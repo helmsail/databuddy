@@ -7,6 +7,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
+import com.helmsail.databuddy.agent.Agent;
 import com.helmsail.databuddy.agent.AgentMapper;
 import com.helmsail.databuddy.agent.EmbeddingStatus;
 import com.helmsail.databuddy.exception.BusinessException;
@@ -52,9 +53,12 @@ public class AgentBizQaService {
 		return mapper.selectByAgent(agentId);
 	}
 
-	/** 按 id 查;不存在返回 null(检索回源用) */
-	public AgentBizQa get(long id) {
-		return mapper.selectById(id);
+	/** 按 agent + id 查;不存在返回 null(检索回源与内部定位共用;由清单筛取,单 agent 行数为小集合) */
+	public AgentBizQa get(long agentId, long id) {
+		return mapper.selectByAgent(agentId).stream()
+			.filter(row -> row.getId() == id)
+			.findFirst()
+			.orElse(null);
 	}
 
 	/** 新增问答:agent 必须存在;落库后立即同步问题向量(失败不阻断,FAILED + 原因落库待重试) */
@@ -77,29 +81,28 @@ public class AgentBizQaService {
 		return qa;
 	}
 
-	/** 修改问答:改可变字段(问题 / 答案);仅问题变化才重同步(答案不入向量) */
-	public AgentBizQa update(long id, AgentBizQa qa) {
-		AgentBizQa old = requireQa(id);
+	/** 修改问答(按 agent + id 定位):改可变字段(问题 / 答案);仅问题变化才重同步(答案不入向量) */
+	public AgentBizQa update(long agentId, long id, AgentBizQa qa) {
+		AgentBizQa old = requireQa(agentId, id);
 		validate(qa);
-		qa.setId(id);
 		try {
-			mapper.update(qa);
+			mapper.update(agentId, id, qa.getQuestion(), qa.getContent());
 		}
 		catch (DuplicateKeyException e) {
 			throw new BusinessException(ErrorCode.INVALID_INPUT, "问题已存在: " + qa.getQuestion());
 		}
-		AgentBizQa updated = mapper.selectById(id);
+		AgentBizQa updated = requireQa(agentId, id);
 		if (!updated.getQuestion().equals(old.getQuestion())) {
 			syncRow(updated);
 		}
 		return updated;
 	}
 
-	/** 删除问答:物理删行 + 删对应向量 */
+	/** 删除问答(按 agent + id 定位):物理删行 + 删对应向量 */
 	@Transactional
-	public void delete(long id) {
-		AgentBizQa old = requireQa(id);
-		mapper.deleteById(id);
+	public void delete(long agentId, long id) {
+		AgentBizQa old = requireQa(agentId, id);
+		mapper.deleteById(agentId, id);
 		vectorService.deleteByDims(old.getAgentId(), embeddingModel.modelName(), KnowledgeType.QA, id);
 		log.info("问答删除: agent={}, question={} (#{})", old.getAgentId(), old.getQuestion(), id);
 	}
@@ -113,11 +116,10 @@ public class AgentBizQaService {
 		log.info("问答全量重建完成: agent={}, 共 {} 条", agentId, rows.size());
 	}
 
-	/** 增量重试:仅处理未同步行(PENDING / FAILED);手动重试与定时兜底共用,幂等可反复调 */
+	/** 增量重试:处理某 agent 全部未同步行(PENDING / FAILED 各查一次);手动重试与定时兜底共用,幂等可反复调 */
 	public void retryUnsynced(long agentId) {
-		List<AgentBizQa> rows = mapper.selectByAgent(agentId).stream()
-			.filter(row -> row.getEmbeddingStatus() != EmbeddingStatus.SYNCED)
-			.toList();
+		List<AgentBizQa> rows = mapper.selectByAgentAndStatus(agentId, EmbeddingStatus.PENDING);
+		rows.addAll(mapper.selectByAgentAndStatus(agentId, EmbeddingStatus.FAILED));
 		if (rows.isEmpty()) {
 			return;
 		}
@@ -127,14 +129,22 @@ public class AgentBizQaService {
 		log.info("问答向量化完成: agent={}, 共 {} 条", agentId, rows.size());
 	}
 
-	/** 兜底扫尾:逐个 agent 重试未同步行(定时任务入口;无待重试行时静默) */
-	public void retryUnsyncedAll() {
-		List<Long> agentIds = mapper.selectAgentIdsUnsynced();
-		for (Long agentId : agentIds) {
-			retryUnsynced(agentId);
+	/** 模型切换失效:把已同步行标记 FAILED(原因给定),交重试 / 定时兜底在新模型分区重建(旧分区向量保留,切回即恢复) */
+	public void invalidateSynced(long agentId, String reason) {
+		List<AgentBizQa> rows = mapper.selectByAgentAndStatus(agentId, EmbeddingStatus.SYNCED);
+		if (rows.isEmpty()) {
+			return;
 		}
-		if (!agentIds.isEmpty()) {
-			log.info("兜底重试完成: 涉及 {} 个 agent", agentIds.size());
+		for (AgentBizQa row : rows) {
+			writeStatus(row, EmbeddingStatus.FAILED, truncate(reason));
+		}
+		log.info("问答模型切换失效: agent={}, 共 {} 条待重建", agentId, rows.size());
+	}
+
+	/** 兜底扫尾:逐 agent 重试未同步行(定时任务入口;无待重试行即空跑,天然静默) */
+	public void retryUnsyncedAll() {
+		for (Agent agent : agentMapper.selectAll()) {
+			retryUnsynced(agent.getId());
 		}
 	}
 
@@ -143,18 +153,30 @@ public class AgentBizQaService {
 		try {
 			String content = buildContent(qa);
 			vectorService.index(qa.getAgentId(), KnowledgeType.QA, qa.getId(), SplitterType.WHOLE, content);
-			mapper.updateSyncStatus(qa.getId(), EmbeddingStatus.SYNCED, null);
-			qa.setEmbeddingStatus(EmbeddingStatus.SYNCED);
-			qa.setErrorMsg(null);
+			writeStatus(qa, EmbeddingStatus.SYNCED, null);
 			log.info("问答向量写入: agent={}, question={} (#{})", qa.getAgentId(), qa.getQuestion(), qa.getId());
 		}
 		catch (Exception e) {
 			String reason = e.getClass().getSimpleName() + (e.getMessage() == null ? "" : ": " + e.getMessage());
 			log.warn("问答向量化失败: agent={}, question={}", qa.getAgentId(), qa.getQuestion(), e);
-			mapper.updateSyncStatus(qa.getId(), EmbeddingStatus.FAILED, truncate(reason));
-			qa.setEmbeddingStatus(EmbeddingStatus.FAILED);
-			qa.setErrorMsg(truncate(reason));
+			writeStatus(qa, EmbeddingStatus.FAILED, truncate(reason));
 		}
+	}
+
+	/** 状态回执(CAS + 迁移校验):仅当行仍为读取时状态才落新态;0 行 = 状态已变或行已删,回执未生效 */
+	private void writeStatus(AgentBizQa qa, EmbeddingStatus to, String errorMsg) {
+		EmbeddingStatus from = qa.getEmbeddingStatus();
+		if (from == null || !from.canTransitionTo(to)) {
+			log.warn("非法状态迁移被挡: {} -> {} (#{})", from, to, qa.getId());
+			return;
+		}
+		int rows = mapper.updateSyncStatus(qa.getAgentId(), qa.getId(), from, to, errorMsg);
+		if (rows == 0) {
+			log.warn("状态回执未生效(状态已变或行已删): #{} {} -> {}", qa.getId(), from, to);
+			return;
+		}
+		qa.setEmbeddingStatus(to);
+		qa.setErrorMsg(errorMsg);
 	}
 
 	/** 向量化文本:仅问题(答案不入向量,命中后回源 MySQL 取 content) */
@@ -162,9 +184,9 @@ public class AgentBizQaService {
 		return qa.getQuestion();
 	}
 
-	/** 取问答行;不存在抛 404 */
-	private AgentBizQa requireQa(long id) {
-		AgentBizQa qa = mapper.selectById(id);
+	/** 取问答行(按 agent + id);不存在抛 404 */
+	private AgentBizQa requireQa(long agentId, long id) {
+		AgentBizQa qa = get(agentId, id);
 		if (qa == null) {
 			throw new BusinessException(ErrorCode.NOT_FOUND, "问答不存在: " + id);
 		}

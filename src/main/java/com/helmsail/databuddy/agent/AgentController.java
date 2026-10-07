@@ -1,14 +1,9 @@
 package com.helmsail.databuddy.agent;
 
-import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.concurrent.Callable;
 
-import org.springframework.core.io.Resource;
-import org.springframework.http.ContentDisposition;
-import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
-import org.springframework.http.ResponseEntity;
 import org.springframework.http.codec.multipart.FilePart;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.CrossOrigin;
@@ -131,14 +126,13 @@ public class AgentController {
 		return reactive(() -> agentService.retrieve(agentId, query, topK));
 	}
 
-	/** 重建全部知识向量(表 / 术语 / 问答 / 文档;内存向量库重启丢失后的一键恢复入口) */
+	/** 重建知识向量(表 / 术语 / 问答;内存向量库重启丢失后的恢复入口) */
 	@PostMapping("/{agentId}/knowledge/rebuild")
 	public Mono<ApiResponse<Void>> rebuildKnowledge(@PathVariable("agentId") long agentId) {
 		return reactiveVoid(() -> {
 			agentBizTableService.sync(agentId);
 			agentBizTermService.rebuildAll(agentId);
 			agentBizQaService.rebuildAll(agentId);
-			agentBizDocumentService.rebuildAll(agentId);
 		});
 	}
 
@@ -213,13 +207,13 @@ public class AgentController {
 	@PostMapping("/{agentId}/terms/{id}")
 	public Mono<ApiResponse<AgentBizTerm>> updateTerm(@PathVariable("agentId") long agentId, @PathVariable("id") long id,
 			@RequestBody AgentBizTerm term) {
-		return reactive(() -> agentBizTermService.update(id, term));
+		return reactive(() -> agentBizTermService.update(agentId, id, term));
 	}
 
 	/** 删除术语(行 + 向量;向量清理触达模型,走弹性线程) */
 	@DeleteMapping("/{agentId}/terms/{id}")
 	public Mono<ApiResponse<Void>> deleteTerm(@PathVariable("agentId") long agentId, @PathVariable("id") long id) {
-		return reactiveVoid(() -> agentBizTermService.delete(id));
+		return reactiveVoid(() -> agentBizTermService.delete(agentId, id));
 	}
 
 	/** 术语向量化重试:仅 PENDING / FAILED 行(模型调用走弹性线程) */
@@ -246,13 +240,13 @@ public class AgentController {
 	@PostMapping("/{agentId}/qa/{id}")
 	public Mono<ApiResponse<AgentBizQa>> updateQa(@PathVariable("agentId") long agentId, @PathVariable("id") long id,
 			@RequestBody AgentBizQa qa) {
-		return reactive(() -> agentBizQaService.update(id, qa));
+		return reactive(() -> agentBizQaService.update(agentId, id, qa));
 	}
 
 	/** 删除问答(行 + 向量;向量清理触达模型,走弹性线程) */
 	@DeleteMapping("/{agentId}/qa/{id}")
 	public Mono<ApiResponse<Void>> deleteQa(@PathVariable("agentId") long agentId, @PathVariable("id") long id) {
-		return reactiveVoid(() -> agentBizQaService.delete(id));
+		return reactiveVoid(() -> agentBizQaService.delete(agentId, id));
 	}
 
 	/** 问答向量化重试:仅 PENDING / FAILED 行(模型调用走弹性线程) */
@@ -269,7 +263,7 @@ public class AgentController {
 		return ApiResponse.success(agentBizDocumentService.list(agentId));
 	}
 
-	/** 上传文档(文件落存储后立即返回,后台异步切分向量化;name / splitterType 走查询参数,缺省取文件名 / PARAGRAPH) */
+	/** 上传文档(先落行、再落文件,落定后立即返回,后台异步切分向量化;name / splitterType 走查询参数,缺省取文件名 / PARAGRAPH) */
 	@PostMapping(value = "/{agentId}/documents", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
 	public Mono<ApiResponse<AgentBizDocument>> uploadDocument(@PathVariable("agentId") long agentId,
 			@RequestPart("file") FilePart file, @RequestParam(name = "name", required = false) String name,
@@ -279,33 +273,17 @@ public class AgentController {
 			.map(ApiResponse::success);
 	}
 
-	/** 下载文档(文件本体;附件流响应,文件名取文档名,中文不乱码) */
-	@GetMapping("/{agentId}/documents/{id}/download")
-	public Mono<ResponseEntity<Resource>> downloadDocument(@PathVariable("agentId") long agentId,
-			@PathVariable("id") long id) {
-		return Mono.fromCallable(() -> {
-			AgentBizDocumentService.DocumentFile file = agentBizDocumentService.download(id);
-			return ResponseEntity.ok()
-				.header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.attachment()
-					.filename(file.name(), StandardCharsets.UTF_8)
-					.build()
-					.toString())
-				.body(file.resource());
-		})
-			.subscribeOn(Schedulers.boundedElastic());
-	}
-
 	/** 修改文档(改名 / 换切分策略;换策略自动重入向量) */
 	@PostMapping("/{agentId}/documents/{id}")
 	public ApiResponse<AgentBizDocument> updateDocument(@PathVariable("agentId") long agentId,
 			@PathVariable("id") long id, @RequestBody AgentBizDocument document) {
-		return ApiResponse.success(agentBizDocumentService.update(id, document));
+		return ApiResponse.success(agentBizDocumentService.update(agentId, id, document));
 	}
 
 	/** 删除文档(行 + 向量 + 物理文件;向量清理触达模型,走弹性线程) */
 	@DeleteMapping("/{agentId}/documents/{id}")
 	public Mono<ApiResponse<Void>> deleteDocument(@PathVariable("agentId") long agentId, @PathVariable("id") long id) {
-		return reactiveVoid(() -> agentBizDocumentService.delete(id));
+		return reactiveVoid(() -> agentBizDocumentService.delete(agentId, id));
 	}
 
 	/** 文档向量化重试:仅 PENDING / FAILED 行(模型调用走弹性线程) */

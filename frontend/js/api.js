@@ -33,15 +33,6 @@ async function apiUpload(path, formData) {
   return j.data;
 }
 
-/* 下载(经隐藏 <a>,服务端 Content-Disposition 决定文件名) */
-function downloadFile(path) {
-  const a = document.createElement('a');
-  a.href = API + path;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-}
-
 /* ===== toast ===== */
 let _toastTimer;
 function toast(msg, bad) {

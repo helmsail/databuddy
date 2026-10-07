@@ -4,6 +4,7 @@ import java.util.List;
 import java.util.Objects;
 
 import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
 
@@ -30,9 +31,13 @@ public class AiModelConfigService {
 
 	private final AiModelServiceFactory factory;
 
-	public AiModelConfigService(AiModelConfigMapper mapper, AiModelServiceFactory factory) {
+	private final ApplicationEventPublisher eventPublisher;
+
+	public AiModelConfigService(AiModelConfigMapper mapper, AiModelServiceFactory factory,
+			ApplicationEventPublisher eventPublisher) {
 		this.mapper = mapper;
 		this.factory = factory;
+		this.eventPublisher = eventPublisher;
 	}
 
 	/** 全部配置(列表用;同类型激活在前) */
@@ -75,7 +80,7 @@ public class AiModelConfigService {
 		return config;
 	}
 
-	/** 激活:同类型激活位滚动到该行,并立即重建实例;EMBEDDING 换模型时提示重建知识向量(旧模型向量按分区保留,切回即恢复) */
+	/** 激活:同类型激活位滚动到该行,并立即重建实例;EMBEDDING 换模型时发布切换事件(知识侧标记旧向量失效,重试管线在新分区重建;旧分区保留,切回即恢复) */
 	public synchronized AiModelConfig activate(Long id) {
 		AiModelConfig config = mapper.selectById(id);
 		if (config == null) {
@@ -87,8 +92,9 @@ public class AiModelConfigService {
 		config.setIsActive(true);
 		factory.refresh(config);
 		if (config.getModelType() == AiModelType.EMBEDDING && !Objects.equals(previousName, config.getModelName())) {
-			log.info("EMBEDDING 模型已切换: {} -> {};新模型下的知识向量需重建后生效(旧模型向量按分区保留,切回即恢复)",
+			log.info("EMBEDDING 模型已切换: {} -> {};知识向量标记失效待重建(旧模型向量按分区保留,切回即恢复)",
 					previousName, config.getModelName());
+			eventPublisher.publishEvent(new EmbeddingModelSwitchedEvent(previousName, config.getModelName()));
 		}
 		log.info("模型配置已激活: id={}, type={}, model={}", id, config.getModelType(), config.getModelName());
 		return config;

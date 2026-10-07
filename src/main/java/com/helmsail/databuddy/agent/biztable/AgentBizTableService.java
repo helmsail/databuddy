@@ -10,6 +10,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
+import com.helmsail.databuddy.agent.Agent;
 import com.helmsail.databuddy.agent.AgentMapper;
 import com.helmsail.databuddy.agent.EmbeddingStatus;
 import com.helmsail.databuddy.bizdatabase.BizDatabaseService;
@@ -110,7 +111,7 @@ public class AgentBizTableService {
 			if (!idSet.contains(row.getId())) {
 				continue;
 			}
-			mapper.deleteById(row.getId());
+			mapper.deleteById(agentId, row.getId());
 			vectorService.deleteByDims(agentId, embeddingModel.modelName(), KnowledgeType.TABLE, row.getId());
 		}
 		log.info("表解绑完成: agent={}, 请求 {} 张", agentId, ids.size());
@@ -121,22 +122,29 @@ public class AgentBizTableService {
 		syncRows(agentId, mapper.selectByAgent(agentId));
 	}
 
-	/** 增量重试:仅处理未同步行(PENDING / FAILED);手动重试与定时兜底共用,幂等可反复调 */
+	/** 增量重试:处理某 agent 全部未同步行(PENDING / FAILED 各查一次);手动重试与定时兜底共用,幂等可反复调 */
 	public void retryUnsynced(long agentId) {
-		List<AgentBizTable> rows = mapper.selectByAgent(agentId).stream()
-			.filter(row -> row.getEmbeddingStatus() != EmbeddingStatus.SYNCED)
-			.toList();
+		List<AgentBizTable> rows = mapper.selectByAgentAndStatus(agentId, EmbeddingStatus.PENDING);
+		rows.addAll(mapper.selectByAgentAndStatus(agentId, EmbeddingStatus.FAILED));
 		syncRows(agentId, rows);
 	}
 
-	/** 兜底扫尾:逐个 agent 重试未同步行(定时任务入口;无待重试行时静默) */
-	public void retryUnsyncedAll() {
-		List<Long> agentIds = mapper.selectAgentIdsUnsynced();
-		for (Long agentId : agentIds) {
-			retryUnsynced(agentId);
+	/** 模型切换失效:把已同步行标记 FAILED(原因给定),交重试 / 定时兜底在新模型分区重建(旧分区向量保留,切回即恢复) */
+	public void invalidateSynced(long agentId, String reason) {
+		List<AgentBizTable> rows = mapper.selectByAgentAndStatus(agentId, EmbeddingStatus.SYNCED);
+		if (rows.isEmpty()) {
+			return;
 		}
-		if (!agentIds.isEmpty()) {
-			log.info("兜底重试完成: 涉及 {} 个 agent", agentIds.size());
+		for (AgentBizTable row : rows) {
+			writeStatus(row, EmbeddingStatus.FAILED, truncate(reason));
+		}
+		log.info("表模型切换失效: agent={}, 共 {} 张待重建", agentId, rows.size());
+	}
+
+	/** 兜底扫尾:逐 agent 重试未同步行(定时任务入口;无待重试行即空跑,天然静默) */
+	public void retryUnsyncedAll() {
+		for (Agent agent : agentMapper.selectAll()) {
+			retryUnsynced(agent.getId());
 		}
 	}
 
@@ -153,16 +161,32 @@ public class AgentBizTableService {
 				List<ColumnMeta> columns = bizDatabaseService.listColumns(row.getDatabaseConfigId(), row.getTableName());
 				String content = buildContent(row.getTableName(), tableComment, columns);
 				vectorService.index(agentId, KnowledgeType.TABLE, row.getId(), SplitterType.WHOLE, content);
-				mapper.updateSyncStatus(row.getId(), EmbeddingStatus.SYNCED, null);
+				writeStatus(row, EmbeddingStatus.SYNCED, null);
 				synced++;
 			}
 			catch (Exception e) {
 				String reason = e.getClass().getSimpleName() + (e.getMessage() == null ? "" : ": " + e.getMessage());
 				log.warn("表向量化失败: agent={}, table={}", agentId, row.getTableName(), e);
-				mapper.updateSyncStatus(row.getId(), EmbeddingStatus.FAILED, truncate(reason));
+				writeStatus(row, EmbeddingStatus.FAILED, truncate(reason));
 			}
 		}
 		log.info("表向量化完成: agent={}, 成功 {}/{}", agentId, synced, rows.size());
+	}
+
+	/** 状态回执(CAS + 迁移校验):仅当行仍为读取时状态才落新态;0 行 = 状态已变或行已删,回执未生效 */
+	private void writeStatus(AgentBizTable row, EmbeddingStatus to, String errorMsg) {
+		EmbeddingStatus from = row.getEmbeddingStatus();
+		if (from == null || !from.canTransitionTo(to)) {
+			log.warn("非法状态迁移被挡: {} -> {} (#{})", from, to, row.getId());
+			return;
+		}
+		int rows = mapper.updateSyncStatus(row.getAgentId(), row.getId(), from, to, errorMsg);
+		if (rows == 0) {
+			log.warn("状态回执未生效(状态已变或行已删): #{} {} -> {}", row.getId(), from, to);
+			return;
+		}
+		row.setEmbeddingStatus(to);
+		row.setErrorMsg(errorMsg);
 	}
 
 	/** 表注释:按库缓存一次表清单(注释可能为 null) */

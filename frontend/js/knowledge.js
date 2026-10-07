@@ -16,7 +16,7 @@ async function mountKnowledge(view) {
         <p>${esc(agent.name)} · 维护专属知识资源(数据表 / 文档 / 术语 / 问答),支持向量召回</p>
       </div>
       <div class="page-actions">
-        <button class="btn secondary" id="kb-rebuild" title="内存向量库重启后会清空:点此把四类知识全部重新向量化">重建全部向量</button>
+        <button class="btn secondary" id="kb-rebuild" title="内存向量库重启后会清空:点此把表 / 术语 / 问答的向量重新化">重建全部向量</button>
       </div>
     </div>
     <div class="tabbar" id="kb-tabs">
@@ -255,7 +255,6 @@ async function renderKbDocs(body) {
             <td>${stChip(d.embeddingStatus, d.errorMsg)}</td>
             <td class="dim">${fmtTime(d.createTime)}</td>
             <td><div class="actions">
-              <button class="btn link" data-down="${d.id}">下载</button>
               <button class="btn link" data-rename="${d.id}" data-name="${esc(d.name)}">改名</button>
               <button class="btn link danger" data-rmdoc="${d.id}" data-name="${esc(d.name)}">删除</button>
             </div></td>
@@ -289,7 +288,6 @@ async function renderKbDocs(body) {
       }
     };
   });
-  $$('[data-down]').forEach((b) => (b.onclick = () => downloadFile(`/agent/${agent.id}/documents/${b.dataset.down}/download`)));
   $$('[data-rename]').forEach((b) => (b.onclick = () => showDocRenameModal(b.dataset.rename, b.dataset.name)));
   $$('[data-rmdoc]').forEach((b) => {
     b.onclick = () =>

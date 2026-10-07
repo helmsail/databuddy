@@ -7,6 +7,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
+import com.helmsail.databuddy.agent.Agent;
 import com.helmsail.databuddy.agent.AgentMapper;
 import com.helmsail.databuddy.agent.EmbeddingStatus;
 import com.helmsail.databuddy.exception.BusinessException;
@@ -52,11 +53,6 @@ public class AgentBizTermService {
 		return mapper.selectByAgent(agentId);
 	}
 
-	/** 按 id 查;不存在返回 null(检索回源用) */
-	public AgentBizTerm get(long id) {
-		return mapper.selectById(id);
-	}
-
 	/** 新增术语:agent 必须存在;落库后立即同步向量(失败不阻断,FAILED + 原因落库待重试) */
 	public AgentBizTerm add(long agentId, AgentBizTerm term) {
 		if (agentMapper.selectById(agentId) == null) {
@@ -77,27 +73,26 @@ public class AgentBizTermService {
 		return term;
 	}
 
-	/** 修改术语:改可变字段(术语 / 同义词 / 释义)后立即重同步 */
-	public AgentBizTerm update(long id, AgentBizTerm term) {
-		requireTerm(id);
+	/** 修改术语(按 agent + id 定位):改可变字段(术语 / 同义词 / 释义)后立即重同步 */
+	public AgentBizTerm update(long agentId, long id, AgentBizTerm term) {
+		requireTerm(agentId, id);
 		validate(term);
-		term.setId(id);
 		try {
-			mapper.update(term);
+			mapper.update(agentId, id, term.getBusinessTerm(), term.getSynonyms(), term.getDescription());
 		}
 		catch (DuplicateKeyException e) {
 			throw new BusinessException(ErrorCode.INVALID_INPUT, "术语已存在: " + term.getBusinessTerm());
 		}
-		AgentBizTerm updated = mapper.selectById(id);
+		AgentBizTerm updated = requireTerm(agentId, id);
 		syncRow(updated);
 		return updated;
 	}
 
-	/** 删除术语:物理删行 + 删对应向量 */
+	/** 删除术语(按 agent + id 定位):物理删行 + 删对应向量 */
 	@Transactional
-	public void delete(long id) {
-		AgentBizTerm old = requireTerm(id);
-		mapper.deleteById(id);
+	public void delete(long agentId, long id) {
+		AgentBizTerm old = requireTerm(agentId, id);
+		mapper.deleteById(agentId, id);
 		vectorService.deleteByDims(old.getAgentId(), embeddingModel.modelName(), KnowledgeType.TERM, id);
 		log.info("术语删除: agent={}, term={} (#{})", old.getAgentId(), old.getBusinessTerm(), id);
 	}
@@ -111,11 +106,10 @@ public class AgentBizTermService {
 		log.info("术语全量重建完成: agent={}, 共 {} 条", agentId, rows.size());
 	}
 
-	/** 增量重试:仅处理未同步行(PENDING / FAILED);手动重试与定时兜底共用,幂等可反复调 */
+	/** 增量重试:处理某 agent 全部未同步行(PENDING / FAILED 各查一次);手动重试与定时兜底共用,幂等可反复调 */
 	public void retryUnsynced(long agentId) {
-		List<AgentBizTerm> rows = mapper.selectByAgent(agentId).stream()
-			.filter(row -> row.getEmbeddingStatus() != EmbeddingStatus.SYNCED)
-			.toList();
+		List<AgentBizTerm> rows = mapper.selectByAgentAndStatus(agentId, EmbeddingStatus.PENDING);
+		rows.addAll(mapper.selectByAgentAndStatus(agentId, EmbeddingStatus.FAILED));
 		if (rows.isEmpty()) {
 			return;
 		}
@@ -125,14 +119,22 @@ public class AgentBizTermService {
 		log.info("术语向量化完成: agent={}, 共 {} 条", agentId, rows.size());
 	}
 
-	/** 兜底扫尾:逐个 agent 重试未同步行(定时任务入口;无待重试行时静默) */
-	public void retryUnsyncedAll() {
-		List<Long> agentIds = mapper.selectAgentIdsUnsynced();
-		for (Long agentId : agentIds) {
-			retryUnsynced(agentId);
+	/** 模型切换失效:把已同步行标记 FAILED(原因给定),交重试 / 定时兜底在新模型分区重建(旧分区向量保留,切回即恢复) */
+	public void invalidateSynced(long agentId, String reason) {
+		List<AgentBizTerm> rows = mapper.selectByAgentAndStatus(agentId, EmbeddingStatus.SYNCED);
+		if (rows.isEmpty()) {
+			return;
 		}
-		if (!agentIds.isEmpty()) {
-			log.info("兜底重试完成: 涉及 {} 个 agent", agentIds.size());
+		for (AgentBizTerm row : rows) {
+			writeStatus(row, EmbeddingStatus.FAILED, truncate(reason));
+		}
+		log.info("术语模型切换失效: agent={}, 共 {} 条待重建", agentId, rows.size());
+	}
+
+	/** 兜底扫尾:逐 agent 重试未同步行(定时任务入口;无待重试行即空跑,天然静默) */
+	public void retryUnsyncedAll() {
+		for (Agent agent : agentMapper.selectAll()) {
+			retryUnsynced(agent.getId());
 		}
 	}
 
@@ -141,18 +143,30 @@ public class AgentBizTermService {
 		try {
 			String content = buildContent(term);
 			vectorService.index(term.getAgentId(), KnowledgeType.TERM, term.getId(), SplitterType.WHOLE, content);
-			mapper.updateSyncStatus(term.getId(), EmbeddingStatus.SYNCED, null);
-			term.setEmbeddingStatus(EmbeddingStatus.SYNCED);
-			term.setErrorMsg(null);
+			writeStatus(term, EmbeddingStatus.SYNCED, null);
 			log.info("术语向量写入: agent={}, term={} (#{})", term.getAgentId(), term.getBusinessTerm(), term.getId());
 		}
 		catch (Exception e) {
 			String reason = e.getClass().getSimpleName() + (e.getMessage() == null ? "" : ": " + e.getMessage());
 			log.warn("术语向量化失败: agent={}, term={}", term.getAgentId(), term.getBusinessTerm(), e);
-			mapper.updateSyncStatus(term.getId(), EmbeddingStatus.FAILED, truncate(reason));
-			term.setEmbeddingStatus(EmbeddingStatus.FAILED);
-			term.setErrorMsg(truncate(reason));
+			writeStatus(term, EmbeddingStatus.FAILED, truncate(reason));
 		}
+	}
+
+	/** 状态回执(CAS + 迁移校验):仅当行仍为读取时状态才落新态;0 行 = 状态已变或行已删,回执未生效 */
+	private void writeStatus(AgentBizTerm term, EmbeddingStatus to, String errorMsg) {
+		EmbeddingStatus from = term.getEmbeddingStatus();
+		if (from == null || !from.canTransitionTo(to)) {
+			log.warn("非法状态迁移被挡: {} -> {} (#{})", from, to, term.getId());
+			return;
+		}
+		int rows = mapper.updateSyncStatus(term.getAgentId(), term.getId(), from, to, errorMsg);
+		if (rows == 0) {
+			log.warn("状态回执未生效(状态已变或行已删): #{} {} -> {}", term.getId(), from, to);
+			return;
+		}
+		term.setEmbeddingStatus(to);
+		term.setErrorMsg(errorMsg);
 	}
 
 	/** 向量化文本:术语 + 同义词 + 释义;同义词/释义缺失只省略、不失败(内容兜底);三者齐入索引,保证规范表述与别称/简称均可召回 */
@@ -167,9 +181,12 @@ public class AgentBizTermService {
 		return content.toString();
 	}
 
-	/** 取术语行;不存在抛 404 */
-	private AgentBizTerm requireTerm(long id) {
-		AgentBizTerm term = mapper.selectById(id);
+	/** 取术语行(按 agent + id,清单筛取);不存在抛 404 */
+	private AgentBizTerm requireTerm(long agentId, long id) {
+		AgentBizTerm term = mapper.selectByAgent(agentId).stream()
+			.filter(row -> row.getId() == id)
+			.findFirst()
+			.orElse(null);
 		if (term == null) {
 			throw new BusinessException(ErrorCode.NOT_FOUND, "术语不存在: " + id);
 		}

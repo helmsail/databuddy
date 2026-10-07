@@ -8,6 +8,7 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 import org.springframework.ai.document.Document;
+import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -20,6 +21,7 @@ import com.helmsail.databuddy.agent.biztable.AgentBizTable;
 import com.helmsail.databuddy.agent.biztable.AgentBizTableService;
 import com.helmsail.databuddy.agent.bizterm.AgentBizTerm;
 import com.helmsail.databuddy.agent.bizterm.AgentBizTermService;
+import com.helmsail.databuddy.aimodel.EmbeddingModelSwitchedEvent;
 import com.helmsail.databuddy.bizdatabase.BizDatabaseConfig;
 import com.helmsail.databuddy.bizdatabase.BizDatabaseService;
 import com.helmsail.databuddy.bizdatabase.BizTableRelation;
@@ -36,7 +38,8 @@ import lombok.extern.slf4j.Slf4j;
 /**
  * 智能体服务:agent 域的唯一对外口(身份 + 跨域横切 + 检索用例);域外只认本类,子域 CRUD 不镜像进来。
  * 检索:跨四类来源向量命中 + 按来源回源补齐(QA 补答案、文档补名称;术语/表块内容自足);
- * 级联删除:四域逐行清(行 + 向量 + 物理文件)+ 会话域(行 + 消息)→ 向量兜底清扫 → 删 agent 行
+ * 级联删除:四域逐行清(行 + 向量 + 物理文件)+ 会话域(行 + 消息)→ 向量兜底清扫 → 删 agent 行;
+ * 模型切换事件:四域已同步行标记失效(原因=切换),交重试管线在新分区重建
  */
 @Slf4j
 @Service
@@ -109,18 +112,33 @@ public class AgentService {
 			agentBizTableService.unbind(id, tableIds);
 		}
 		for (AgentBizTerm term : agentBizTermService.list(id)) {
-			agentBizTermService.delete(term.getId());
+			agentBizTermService.delete(id, term.getId());
 		}
 		for (AgentBizQa qa : agentBizQaService.list(id)) {
-			agentBizQaService.delete(qa.getId());
+			agentBizQaService.delete(id, qa.getId());
 		}
 		for (AgentBizDocument document : agentBizDocumentService.list(id)) {
-			agentBizDocumentService.delete(document.getId());
+			agentBizDocumentService.delete(id, document.getId());
 		}
 		sessionService.deleteSessionsByAgent(id);   // 会话域:行 + 消息
 		vectorService.deleteByDims(id, null, null, null);   // 兜底:清残留向量(防历史脏数据)
 		agentMapper.deleteById(id);
 		log.info("agent 删除(级联): {} (#{})", agent.getName(), id);
+	}
+
+	/** EMBEDDING 模型切换(事件):把每个 agent 四类知识的已同步行标记失败(原因=模型切换),交手动重试与定时任务在新分区重建;旧分区向量保留,切回即恢复 */
+	@EventListener
+	public void onEmbeddingModelSwitched(EmbeddingModelSwitchedEvent event) {
+		String reason = event.reason();
+		List<Agent> agents = agentMapper.selectAll();
+		for (Agent agent : agents) {
+			agentBizTableService.invalidateSynced(agent.getId(), reason);
+			agentBizTermService.invalidateSynced(agent.getId(), reason);
+			agentBizQaService.invalidateSynced(agent.getId(), reason);
+			agentBizDocumentService.invalidateSynced(agent.getId(), reason);
+		}
+		log.info("模型切换失效标记完成: {} 个 agent 的知识待重建 ({} -> {})", agents.size(), event.previousModel(),
+				event.currentModel());
 	}
 
 	/**
@@ -141,7 +159,7 @@ public class AgentService {
 			long knowledgeId = metadataLong(hit, VectorMetadata.KNOWLEDGE_ID);
 			Double score = hit.getScore();
 			chunks.add(new RetrievedChunk(hitType, knowledgeId, score == null ? 0d : score, hit.getText(),
-					extra(hitType, knowledgeId)));
+					extra(agentId, hitType, knowledgeId)));
 		}
 		return chunks;
 	}
@@ -207,16 +225,19 @@ public class AgentService {
 	}
 
 	/** 回源补齐:按知识类型取本行"不在向量里"的字段(QA 答案 / 文档名);行已删则空表 */
-	private Map<String, Object> extra(KnowledgeType knowledgeType, long knowledgeId) {
+	private Map<String, Object> extra(long agentId, KnowledgeType knowledgeType, long knowledgeId) {
 		switch (knowledgeType) {
 			case QA -> {
-				AgentBizQa qa = agentBizQaService.get(knowledgeId);
+				AgentBizQa qa = agentBizQaService.get(agentId, knowledgeId);
 				if (qa != null && StringUtils.hasText(qa.getContent())) {
 					return Map.of("answer", qa.getContent());
 				}
 			}
 			case DOCUMENT -> {
-				AgentBizDocument document = agentBizDocumentService.get(knowledgeId);
+				AgentBizDocument document = agentBizDocumentService.list(agentId).stream()
+					.filter(row -> row.getId() == knowledgeId)
+					.findFirst()
+					.orElse(null);
 				if (document != null) {
 					return Map.of("name", document.getName());
 				}

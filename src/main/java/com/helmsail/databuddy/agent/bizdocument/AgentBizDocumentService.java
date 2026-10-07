@@ -6,14 +6,12 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-
-import jakarta.annotation.PreDestroy;
 
 import org.springframework.ai.document.Document;
 import org.springframework.ai.reader.tika.TikaDocumentReader;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.core.io.Resource;
+import org.springframework.core.task.TaskExecutor;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.http.codec.multipart.FilePart;
 import org.springframework.stereotype.Service;
@@ -36,9 +34,9 @@ import reactor.core.scheduler.Schedulers;
 
 /**
  * 文档服务:agent_biz_document 行的生命周期(上传 / 修改 / 删除 / 列表)与向量化。
- * 三库联动:文件本体走 storage 包(本地落盘),行落系统库,文本按 splitter_type 切分入向量库;
+ * 三库联动(上传):行先落系统库(唯一键裁决重名)→ 文件同步落 storage(落盘失败撤行,不留悬挂)→ 文本经 vectorSyncExecutor 队列异步切分入向量库;
  * 文本获取:markdown 直读保结构,其余格式经 Tika 提取(自动识别编码、去 HTML 标签,提取为空按失败处理);
- * 上传与策略变更异步处理(落行 PENDING → worker 后台跑,立即返回),失败落库待手动 retryUnsynced 与定时兜底
+ * 上传与策略变更异步处理(行落 PENDING → vectorSyncExecutor 后台跑,立即返回),失败落库待手动 retryUnsynced 与定时兜底
  */
 @Slf4j
 @Service
@@ -57,13 +55,6 @@ public class AgentBizDocumentService {
 	/** 直读类扩展名(不经 Tika,保留原文:markdown 结构供 MARKDOWN 切分器识别) */
 	private static final Set<String> VERBATIM_EXTENSIONS = Set.of("md", "markdown");
 
-	/** 异步处理线程:单线程串行(读文件 + 批量嵌入是重 IO,按序处理即可);守护线程随进程退出 */
-	private final ExecutorService worker = Executors.newSingleThreadExecutor(runnable -> {
-		Thread thread = new Thread(runnable, "agent-bizdocument-worker");
-		thread.setDaemon(true);
-		return thread;
-	});
-
 	private final AgentBizDocumentMapper mapper;
 
 	private final AgentMapper agentMapper;
@@ -75,13 +66,18 @@ public class AgentBizDocumentService {
 	/** 委托门面:取当前模型名(删除只清现役分区) */
 	private final DelegatingEmbeddingModel embeddingModel;
 
+	/** 向量化后台队列(装配见 async 包):单线程 FIFO 串行,活过请求 */
+	private final TaskExecutor vectorSyncExecutor;
+
 	public AgentBizDocumentService(AgentBizDocumentMapper mapper, AgentMapper agentMapper,
-			LocalFileStorage fileStorage, VectorService vectorService, DelegatingEmbeddingModel embeddingModel) {
+			LocalFileStorage fileStorage, VectorService vectorService, DelegatingEmbeddingModel embeddingModel,
+			@Qualifier("vectorSyncExecutor") TaskExecutor vectorSyncExecutor) {
 		this.mapper = mapper;
 		this.agentMapper = agentMapper;
 		this.fileStorage = fileStorage;
 		this.vectorService = vectorService;
 		this.embeddingModel = embeddingModel;
+		this.vectorSyncExecutor = vectorSyncExecutor;
 	}
 
 	/** 某 agent 的文档清单 */
@@ -89,82 +85,95 @@ public class AgentBizDocumentService {
 		return mapper.selectByAgent(agentId);
 	}
 
-	/** 按 id 查;不存在返回 null(检索回源用) */
-	public AgentBizDocument get(long id) {
-		return mapper.selectById(id);
-	}
-
-	/** 文档下载:行不存在 404;文件本体经存储读取(不存在由 storage 抛 404) */
-	public DocumentFile download(long id) {
-		AgentBizDocument document = requireDocument(id);
-		Resource resource = fileStorage.getResource(document.getStoragePath());
-		return new DocumentFile(downloadName(document, resource), resource);
-	}
-
 	/**
-	 * 上传文档:预检(agent 存在、名字未占用)→ 文件落存储(按 agent 分目录,落盘名 = 文档名:同名互斥即路径互斥,防同源覆盖)→
-	 * 行落库 → worker 异步切分向量化,立即返回。
+	 * 上传文档:预检(agent 存在)→ 行先落库(唯一键裁决重名:重名即拒,不碰文件)→ 文件同步落存储(按 agent 分目录,
+	 * 落盘名 = 文档名;落盘失败撤行)→ vectorSyncExecutor 队列异步切分向量化,立即返回。
 	 * name 缺省取文件名;仅接受白名单扩展名(文本类 + pdf/word/excel/ppt,其余直接拒绝)
 	 */
 	public Mono<AgentBizDocument> upload(long agentId, FilePart filePart, String name, SplitterType splitterType) {
-		String docName = resolveName(name, filePart.filename());
-		validateName(docName);
+		// 文档名归一与校验:显式名字优先(缺省取上传文件名),不含路径分隔符,扩展名在白名单内
+		String rawName = StringUtils.hasText(name) ? name : filePart.filename();
+		if (!StringUtils.hasText(rawName)) {
+			throw new BusinessException(ErrorCode.INVALID_INPUT, "文档名不能为空");
+		}
+		String docName = rawName.strip();
+		if (docName.contains("/") || docName.contains("\\")) {
+			throw new BusinessException(ErrorCode.INVALID_INPUT, "文档名不能包含路径分隔符: " + docName);
+		}
+		if (!SUPPORTED_EXTENSIONS.contains(extension(docName))) {
+			throw new BusinessException(ErrorCode.INVALID_INPUT, "暂不支持的文件类型: " + docName);
+		}
 		SplitterType type = splitterType == null ? SplitterType.PARAGRAPH : splitterType;
-		return Mono.fromRunnable(() -> precheck(agentId, docName))
+		// 与 storage 落盘同一拼法(subPath + 文件名),行内路径与磁盘一致
+		String path = SUB_PATH_PREFIX + agentId + "/" + docName;
+		return Mono.fromRunnable(() -> {
+			if (agentMapper.selectById(agentId) == null) {
+				throw new BusinessException(ErrorCode.NOT_FOUND, "agent 不存在: " + agentId);
+			}
+		})
 			.subscribeOn(Schedulers.boundedElastic())
-			.then(fileStorage.store(filePart, SUB_PATH_PREFIX + agentId, docName))
-			.flatMap(path -> Mono.fromCallable(() -> insertAndTrigger(agentId, docName, type, path))
-				.subscribeOn(Schedulers.boundedElastic()));
+			.then(Mono.fromCallable(() -> {
+				// 行先落库:唯一键裁决重名(重名即拒,不碰文件);返回已回填自增 id 的行
+				AgentBizDocument document = new AgentBizDocument();
+				document.setAgentId(agentId);
+				document.setName(docName);
+				document.setStoragePath(path);
+				document.setSplitterType(type);
+				document.setEmbeddingStatus(EmbeddingStatus.PENDING);
+				try {
+					mapper.insert(document);
+				}
+				catch (DuplicateKeyException e) {
+					throw new BusinessException(ErrorCode.INVALID_INPUT, "文档已存在: " + docName);
+				}
+				return document;
+			})
+				.subscribeOn(Schedulers.boundedElastic()))
+			.flatMap(document -> fileStorage.store(filePart, SUB_PATH_PREFIX + agentId, docName)
+				.doOnError(e -> rollbackQuietly(document))
+				.doOnSuccess(stored -> {
+					vectorSyncExecutor.execute(() -> syncById(agentId, document.getId()));
+					log.info("文档上传: agent={}, name={} (#{})", agentId, docName, document.getId());
+				})
+				.thenReturn(document));
 	}
 
-	/** 修改文档:改可变字段(文档名 / 切分策略);切分策略变化才重同步(文档名与向量内容无关) */
-	public AgentBizDocument update(long id, AgentBizDocument patch) {
+	/** 修改文档(按 agent + id 定位):改可变字段(文档名 / 切分策略);切分策略变化才重同步(文档名与向量内容无关) */
+	public AgentBizDocument update(long agentId, long id, AgentBizDocument patch) {
 		if (patch == null) {
 			throw new BusinessException(ErrorCode.INVALID_INPUT, "文档参数不能为空");
 		}
-		AgentBizDocument old = requireDocument(id);
+		AgentBizDocument old = requireDocument(agentId, id);
 		String name = StringUtils.hasText(patch.getName()) ? patch.getName().strip() : old.getName();
 		SplitterType splitterType = patch.getSplitterType() == null ? old.getSplitterType() : patch.getSplitterType();
 		try {
-			mapper.update(id, name, splitterType);
+			mapper.update(agentId, id, name, splitterType);
 		}
 		catch (DuplicateKeyException e) {
 			throw new BusinessException(ErrorCode.INVALID_INPUT, "文档已存在: " + name);
 		}
-		AgentBizDocument updated = mapper.selectById(id);
+		AgentBizDocument updated = requireDocument(agentId, id);
 		if (splitterType != old.getSplitterType()) {
-			mapper.updateSyncStatus(id, EmbeddingStatus.PENDING, null);
-			updated.setEmbeddingStatus(EmbeddingStatus.PENDING);
-			updated.setErrorMsg(null);
-			worker.execute(() -> syncById(id));
+			writeStatus(updated, EmbeddingStatus.PENDING, null);
+			vectorSyncExecutor.execute(() -> syncById(agentId, id));
 		}
 		return updated;
 	}
 
-	/** 删除文档:物理删行 + 删对应向量 + 删存储文件 */
+	/** 删除文档(按 agent + id 定位):物理删行 + 删对应向量 + 删存储文件 */
 	@Transactional
-	public void delete(long id) {
-		AgentBizDocument old = requireDocument(id);
-		mapper.deleteById(id);
+	public void delete(long agentId, long id) {
+		AgentBizDocument old = requireDocument(agentId, id);
+		mapper.deleteById(agentId, id);
 		vectorService.deleteByDims(old.getAgentId(), embeddingModel.modelName(), KnowledgeType.DOCUMENT, id);
 		fileStorage.delete(old.getStoragePath());
 		log.info("文档删除: agent={}, name={} (#{})", old.getAgentId(), old.getName(), id);
 	}
 
-	/** 全量重建:全部文档逐篇向量化(重启后内存向量库丢失的恢复入口;失败行落 FAILED 待重试) */
-	public void rebuildAll(long agentId) {
-		List<AgentBizDocument> rows = mapper.selectByAgent(agentId);
-		for (AgentBizDocument row : rows) {
-			syncRow(row);
-		}
-		log.info("文档全量重建完成: agent={}, 共 {} 篇", agentId, rows.size());
-	}
-
-	/** 增量重试:仅处理未同步行(PENDING / FAILED);手动重试与定时兜底共用,幂等可反复调 */
+	/** 增量重试:处理某 agent 全部未同步行(PENDING / FAILED 各查一次);手动重试与定时兜底共用,幂等可反复调 */
 	public void retryUnsynced(long agentId) {
-		List<AgentBizDocument> rows = mapper.selectByAgent(agentId).stream()
-			.filter(row -> row.getEmbeddingStatus() != EmbeddingStatus.SYNCED)
-			.toList();
+		List<AgentBizDocument> rows = mapper.selectByAgentAndStatus(agentId, EmbeddingStatus.PENDING);
+		rows.addAll(mapper.selectByAgentAndStatus(agentId, EmbeddingStatus.FAILED));
 		if (rows.isEmpty()) {
 			return;
 		}
@@ -174,60 +183,38 @@ public class AgentBizDocumentService {
 		log.info("文档向量化完成: agent={}, 共 {} 篇", agentId, rows.size());
 	}
 
-	/** 兜底扫尾:逐个 agent 重试未同步行(定时任务入口;无待重试行时静默) */
-	public void retryUnsyncedAll() {
-		List<Long> agentIds = mapper.selectAgentIdsUnsynced();
-		for (Long agentId : agentIds) {
-			retryUnsynced(agentId);
+	/** 模型切换失效:把已同步行标记 FAILED(原因给定),交重试 / 定时兜底在新模型分区重建(旧分区向量保留,切回即恢复) */
+	public void invalidateSynced(long agentId, String reason) {
+		List<AgentBizDocument> rows = mapper.selectByAgentAndStatus(agentId, EmbeddingStatus.SYNCED);
+		if (rows.isEmpty()) {
+			return;
 		}
-		if (!agentIds.isEmpty()) {
-			log.info("兜底重试完成: 涉及 {} 个 agent", agentIds.size());
+		for (AgentBizDocument row : rows) {
+			writeStatus(row, EmbeddingStatus.FAILED,
+					reason.length() <= ERROR_MSG_MAX ? reason : reason.substring(0, ERROR_MSG_MAX));
 		}
+		log.info("文档模型切换失效: agent={}, 共 {} 篇待重建", agentId, rows.size());
 	}
 
-	/** 停止异步线程(守护线程,正常退出时先停);未处理完的行由下次启动的定时兜底补刷 */
-	@PreDestroy
-	public void close() {
-		worker.shutdownNow();
-	}
-
-	/** 上传先验:agent 必须存在、同 agent 下文档名未占用(在文件落盘前拦住,避免重名覆盖旧文件) */
-	private void precheck(long agentId, String docName) {
-		if (agentMapper.selectById(agentId) == null) {
-			throw new BusinessException(ErrorCode.NOT_FOUND, "agent 不存在: " + agentId);
-		}
-		if (mapper.selectByAgentAndName(agentId, docName) != null) {
-			throw new BusinessException(ErrorCode.INVALID_INPUT, "文档已存在: " + docName);
-		}
-	}
-
-	/** 建行并触发后台处理(在文件落盘后调用);建行失败清掉刚落盘的文件,不留孤儿 */
-	private AgentBizDocument insertAndTrigger(long agentId, String docName, SplitterType splitterType, String path) {
-		AgentBizDocument document = new AgentBizDocument();
-		document.setAgentId(agentId);
-		document.setName(docName);
-		document.setStoragePath(path);
-		document.setSplitterType(splitterType);
-		document.setEmbeddingStatus(EmbeddingStatus.PENDING);
+	/** 落盘失败回滚:撤掉刚插入的行 + 清可能残留的部分文件(两步均只告警,不掩盖原始异常) */
+	private void rollbackQuietly(AgentBizDocument document) {
 		try {
-			mapper.insert(document);
-		}
-		catch (DuplicateKeyException e) {
-			// 并发同名的兜底:文件路径已被既有行的文件占用,删除会破坏旧文件,保留
-			throw new BusinessException(ErrorCode.INVALID_INPUT, "文档已存在: " + docName);
+			mapper.deleteById(document.getAgentId(), document.getId());
 		}
 		catch (Exception e) {
-			deleteQuietly(path);
-			throw e;
+			log.warn("回滚文档行失败: #{} ({})", document.getId(), e.getMessage());
 		}
-		worker.execute(() -> syncById(document.getId()));
-		log.info("文档上传: agent={}, name={} (#{})", agentId, docName, document.getId());
-		return document;
+		try {
+			fileStorage.delete(document.getStoragePath());
+		}
+		catch (Exception e) {
+			log.warn("清理文件失败: {} ({})", document.getStoragePath(), e.getMessage());
+		}
 	}
 
-	/** 异步入口:按 id 重载行(跨线程不共享对象;行已被删则跳过) */
-	private void syncById(long id) {
-		AgentBizDocument document = mapper.selectById(id);
+	/** 异步入口:按 agent + id 重载行(跨线程不共享对象;行已被删则跳过) */
+	private void syncById(long agentId, long id) {
+		AgentBizDocument document = findRow(agentId, id);
 		if (document == null) {
 			return;
 		}
@@ -236,33 +223,39 @@ public class AgentBizDocumentService {
 
 	/**
 	 * 单条同步:读文件原文 → 按行内策略切分入向量 → 落状态;失败不抛出,FAILED + 原因落库。
-	 * synchronized:worker 与定时任务可能同时捞到同一行(此时仍是 PENDING),串行化避免重复写入
+	 * synchronized:vectorSyncExecutor 队列与定时任务可能同时捞到同一行(此时仍是 PENDING),串行化避免重复写入
 	 */
 	private synchronized void syncRow(AgentBizDocument document) {
 		try {
 			String content = readContent(document);
 			vectorService.index(document.getAgentId(), KnowledgeType.DOCUMENT, document.getId(),
 					document.getSplitterType(), content);
-			mapper.updateSyncStatus(document.getId(), EmbeddingStatus.SYNCED, null);
+			writeStatus(document, EmbeddingStatus.SYNCED, null);
 			log.info("文档向量写入: agent={}, name={} (#{})", document.getAgentId(), document.getName(),
 					document.getId());
 		}
 		catch (Exception e) {
 			String reason = e.getClass().getSimpleName() + (e.getMessage() == null ? "" : ": " + e.getMessage());
 			log.warn("文档向量化失败: agent={}, name={}", document.getAgentId(), document.getName(), e);
-			mapper.updateSyncStatus(document.getId(), EmbeddingStatus.FAILED, truncate(reason));
+			writeStatus(document, EmbeddingStatus.FAILED,
+					reason.length() <= ERROR_MSG_MAX ? reason : reason.substring(0, ERROR_MSG_MAX));
 		}
 	}
 
-	/** 下载文件名:文档名优先;无扩展名时借原文件扩展名(改名后下载仍可正常打开) */
-	private String downloadName(AgentBizDocument document, Resource resource) {
-		String name = document.getName();
-		if (name.lastIndexOf('.') > 0) {
-			return name;
+	/** 状态回执(CAS + 迁移校验):仅当行仍为读取时状态才落新态;0 行 = 状态已变或行已删,回执未生效 */
+	private void writeStatus(AgentBizDocument document, EmbeddingStatus to, String errorMsg) {
+		EmbeddingStatus from = document.getEmbeddingStatus();
+		if (from == null || !from.canTransitionTo(to)) {
+			log.warn("非法状态迁移被挡: {} -> {} (#{})", from, to, document.getId());
+			return;
 		}
-		String stored = resource.getFilename();
-		int dot = stored == null ? -1 : stored.lastIndexOf('.');
-		return dot > 0 ? name + stored.substring(dot) : name;
+		int rows = mapper.updateSyncStatus(document.getAgentId(), document.getId(), from, to, errorMsg);
+		if (rows == 0) {
+			log.warn("状态回执未生效(状态已变或行已删): #{} {} -> {}", document.getId(), from, to);
+			return;
+		}
+		document.setEmbeddingStatus(to);
+		document.setErrorMsg(errorMsg);
 	}
 
 	/** 读文件文本:markdown 直读保原文,其余经 Tika 提取(自动识别编码 / 去 HTML 标签);提取为空按失败处理 */
@@ -284,60 +277,27 @@ public class AgentBizDocumentService {
 		return content;
 	}
 
-	/** 取文档行;不存在抛 404 */
-	private AgentBizDocument requireDocument(long id) {
-		AgentBizDocument document = mapper.selectById(id);
+	/** 从清单筛取指定 id 的行;不存在返回 null(单行定位统一由清单筛取:单 agent 行数为小集合) */
+	private AgentBizDocument findRow(long agentId, long id) {
+		return mapper.selectByAgent(agentId).stream()
+			.filter(document -> document.getId() == id)
+			.findFirst()
+			.orElse(null);
+	}
+
+	/** 取文档行(按 agent + id);不存在抛 404 */
+	private AgentBizDocument requireDocument(long agentId, long id) {
+		AgentBizDocument document = findRow(agentId, id);
 		if (document == null) {
 			throw new BusinessException(ErrorCode.NOT_FOUND, "文档不存在: " + id);
 		}
 		return document;
 	}
 
-	/** 文档名归一:显式名字优先,缺省用上传文件名 */
-	private String resolveName(String name, String filename) {
-		String docName = StringUtils.hasText(name) ? name.strip() : filename;
-		if (!StringUtils.hasText(docName)) {
-			throw new BusinessException(ErrorCode.INVALID_INPUT, "文档名不能为空");
-		}
-		return docName.strip();
-	}
-
-	/** 文档名校验:不含路径分隔符(落盘文件名直接用文档名),扩展名须在白名单内(清单见 SUPPORTED_EXTENSIONS) */
-	private void validateName(String docName) {
-		if (docName.contains("/") || docName.contains("\\")) {
-			throw new BusinessException(ErrorCode.INVALID_INPUT, "文档名不能包含路径分隔符: " + docName);
-		}
-		if (!SUPPORTED_EXTENSIONS.contains(extension(docName))) {
-			throw new BusinessException(ErrorCode.INVALID_INPUT, "暂不支持的文件类型: " + docName);
-		}
-	}
-
 	/** 取小写扩展名(无点则为空串) */
 	private String extension(String docName) {
 		int dot = docName.lastIndexOf('.');
 		return dot < 0 ? "" : docName.substring(dot + 1).toLowerCase(Locale.ROOT);
-	}
-
-	/** 删除文件失败只告警(用于失败清理路径,不掩盖原始异常) */
-	private void deleteQuietly(String path) {
-		try {
-			fileStorage.delete(path);
-		}
-		catch (Exception e) {
-			log.warn("清理文件失败: {} ({})", path, e.getMessage());
-		}
-	}
-
-	/** 失败原因截断到列宽上限(NULL 安全) */
-	private String truncate(String message) {
-		if (message == null) {
-			return null;
-		}
-		return message.length() <= ERROR_MSG_MAX ? message : message.substring(0, ERROR_MSG_MAX);
-	}
-
-	/** 下载载荷:文件名(Content-Disposition 用)+ 文件资源(WebFlux 零拷贝写出) */
-	public record DocumentFile(String name, Resource resource) {
 	}
 
 }
