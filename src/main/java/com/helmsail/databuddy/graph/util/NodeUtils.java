@@ -24,7 +24,7 @@ public final class NodeUtils {
 	/** 模型可能把 JSON 包进 ```json 围栏,解析前先剥掉 */
 	private static final Pattern FENCE = Pattern.compile("```(?:json)?\\s*([\\s\\S]*?)\\s*```");
 
-	/** 表块内容首行约定:"表: 表名(注释)"——与 AgentBizTableService#buildContent 对齐 */
+	/** 表块内容首行约定:"表: 表名(注释)"——与 AgentBizTableService#sync 拼装对齐 */
 	private static final Pattern TABLE_HEAD = Pattern.compile("^\\s*表:\\s*([^\\s(（]+)");
 
 	private NodeUtils() {

@@ -15,9 +15,6 @@ async function mountKnowledge(view) {
         <h1>智能体知识库</h1>
         <p>${esc(agent.name)} · 维护专属知识资源(数据表 / 文档 / 术语 / 问答),支持向量召回</p>
       </div>
-      <div class="page-actions">
-        <button class="btn secondary" id="kb-rebuild" title="内存向量库重启后会清空:点此把表 / 术语 / 问答的向量重新化">重建全部向量</button>
-      </div>
     </div>
     <div class="tabbar" id="kb-tabs">
       <button data-tab="tables" class="active">数据表</button>
@@ -34,23 +31,6 @@ async function mountKnowledge(view) {
       renderKbTab(btn.dataset.tab);
     };
   });
-  $('#kb-rebuild').onclick = () =>
-    confirmBox({
-      title: '重建全部向量',
-      message: '把该智能体的表 / 术语 / 问答 / 文档全部重新向量化(内存向量库重启丢失后的恢复入口)。确认执行?',
-      confirmText: '开始重建',
-      onConfirm: async () => {
-        try {
-          toast('重建中,请稍候…');
-          await api('POST', `/agent/${agent.id}/knowledge/rebuild`);
-          toast('全部向量重建完成');
-          const active = $('#kb-tabs button.active');
-          renderKbTab(active ? active.dataset.tab : 'tables');
-        } catch (e) {
-          toast(e.message, true);
-        }
-      },
-    });
   renderKbTab('tables');
 
   window.__pageCleanup = null;
@@ -98,13 +78,12 @@ async function renderKbTables(body) {
       </div>
     </div>
     <div class="tab-toolbar">
-      <button class="btn secondary" id="tbl-sync">全量同步向量</button>
-      <button class="btn secondary" id="tbl-retry">重试未完成</button>
-      <span class="hint">共绑定 ${binds.length} 张表;绑定/同步后自动入向量库</span>
+      <button class="btn secondary" id="tbl-sync">刷新表向量</button>
+      <span class="hint">共绑定 ${binds.length} 张表;绑定后自动刷一次,结构变化时用前刷新</span>
     </div>
     <div class="tbl-wrap">
       <table class="tbl">
-        <thead><tr><th>表名</th><th>所属库</th><th>嵌入状态</th><th>更新时间</th><th style="text-align:right">操作</th></tr></thead>
+        <thead><tr><th>表名</th><th>所属库</th><th>更新时间</th><th style="text-align:right">操作</th></tr></thead>
         <tbody>
           ${
             binds
@@ -112,7 +91,6 @@ async function renderKbTables(body) {
                 (b) => `<tr>
             <td class="cell-main">${esc(b.tableName)}</td>
             <td class="dim">${esc(dbName(b.databaseConfigId))}</td>
-            <td>${stChip(b.embeddingStatus, b.errorMsg)}</td>
             <td class="dim">${fmtTime(b.updateTime)}</td>
             <td><div class="actions">
               <button class="btn link" data-cols="${b.id}" data-db="${b.databaseConfigId}" data-table="${esc(b.tableName)}">查看结构</button>
@@ -120,7 +98,7 @@ async function renderKbTables(body) {
             </div></td>
           </tr>`
               )
-              .join('') || '<tr><td colspan="5" class="empty">尚未绑定任何表</td></tr>'
+              .join('') || '<tr><td colspan="4" class="empty">尚未绑定任何表</td></tr>'
           }
         </tbody>
       </table>
@@ -155,6 +133,7 @@ async function renderKbTables(body) {
     try {
       await api('POST', `/agent/${agent.id}/biz-tables`, { databaseConfigId: Number($('#bind-db').value), tableNames: names });
       toast(`已绑定 ${names.length} 张表,向量同步中`);
+      await api('POST', `/agent/${agent.id}/biz-tables/sync`);
       renderKbTab('tables');
     } catch (e) {
       toast(e.message, true);
@@ -164,16 +143,7 @@ async function renderKbTables(body) {
   $('#tbl-sync').onclick = async () => {
     try {
       await api('POST', `/agent/${agent.id}/biz-tables/sync`);
-      toast('已触发全量重刷');
-      renderKbTab('tables');
-    } catch (e) {
-      toast(e.message, true);
-    }
-  };
-  $('#tbl-retry').onclick = async () => {
-    try {
-      await api('POST', `/agent/${agent.id}/biz-tables/retry`);
-      toast('已重试未完成的表');
+      toast('表向量已刷新');
       renderKbTab('tables');
     } catch (e) {
       toast(e.message, true);

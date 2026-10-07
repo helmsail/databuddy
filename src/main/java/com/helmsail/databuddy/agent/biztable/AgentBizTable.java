@@ -2,12 +2,11 @@ package com.helmsail.databuddy.agent.biztable;
 
 import java.time.LocalDateTime;
 
-import com.helmsail.databuddy.agent.EmbeddingStatus;
-
 import lombok.Data;
 
 /**
- * agent 与业务表的绑定(一行 = 绑定的一张表);向量化粒度整表一块,批量整体同步
+ * agent 与业务表的绑定(一行 = 绑定的一张表)。无向量状态字段——业务库结构会漂移,"曾同步成功"不代表新鲜,
+ * 向量由人工刷新入口在使用前实时查库重刷
  */
 @Data
 public class AgentBizTable {
@@ -23,12 +22,6 @@ public class AgentBizTable {
 
 	/** 业务表名 */
 	private String tableName;
-
-	/** 向量化状态(PENDING / SYNCED / FAILED) */
-	private EmbeddingStatus embeddingStatus;
-
-	/** 最近一次向量化失败原因(成功时清空) */
-	private String errorMsg;
 
 	/** 创建时间 */
 	private LocalDateTime createTime;

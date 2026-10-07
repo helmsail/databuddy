@@ -7,12 +7,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
-import com.helmsail.databuddy.agent.Agent;
 import com.helmsail.databuddy.agent.AgentMapper;
 import com.helmsail.databuddy.agent.EmbeddingStatus;
 import com.helmsail.databuddy.exception.BusinessException;
 import com.helmsail.databuddy.exception.ErrorCode;
-import com.helmsail.databuddy.vectorize.DelegatingEmbeddingModel;
 import com.helmsail.databuddy.vectorize.KnowledgeType;
 import com.helmsail.databuddy.vectorize.VectorService;
 import com.helmsail.databuddy.vectorize.splitter.SplitterType;
@@ -37,15 +35,10 @@ public class AgentBizTermService {
 
 	private final VectorService vectorService;
 
-	/** 委托门面:取当前模型名(删除只清现役分区) */
-	private final DelegatingEmbeddingModel embeddingModel;
-
-	public AgentBizTermService(AgentBizTermMapper mapper, AgentMapper agentMapper, VectorService vectorService,
-			DelegatingEmbeddingModel embeddingModel) {
+	public AgentBizTermService(AgentBizTermMapper mapper, AgentMapper agentMapper, VectorService vectorService) {
 		this.mapper = mapper;
 		this.agentMapper = agentMapper;
 		this.vectorService = vectorService;
-		this.embeddingModel = embeddingModel;
 	}
 
 	/** 某 agent 的术语清单 */
@@ -93,17 +86,8 @@ public class AgentBizTermService {
 	public void delete(long agentId, long id) {
 		AgentBizTerm old = requireTerm(agentId, id);
 		mapper.deleteById(agentId, id);
-		vectorService.deleteByDims(old.getAgentId(), embeddingModel.modelName(), KnowledgeType.TERM, id);
+		vectorService.deleteEntry(old.getAgentId(), KnowledgeType.TERM, id);
 		log.info("术语删除: agent={}, term={} (#{})", old.getAgentId(), old.getBusinessTerm(), id);
-	}
-
-	/** 全量重建:全部术语逐行向量化(重启后内存向量库丢失的恢复入口;失败行落 FAILED 待重试) */
-	public void rebuildAll(long agentId) {
-		List<AgentBizTerm> rows = mapper.selectByAgent(agentId);
-		for (AgentBizTerm row : rows) {
-			syncRow(row);
-		}
-		log.info("术语全量重建完成: agent={}, 共 {} 条", agentId, rows.size());
 	}
 
 	/** 增量重试:处理某 agent 全部未同步行(PENDING / FAILED 各查一次);手动重试与定时兜底共用,幂等可反复调 */
@@ -131,18 +115,18 @@ public class AgentBizTermService {
 		log.info("术语模型切换失效: agent={}, 共 {} 条待重建", agentId, rows.size());
 	}
 
-	/** 兜底扫尾:逐 agent 重试未同步行(定时任务入口;无待重试行即空跑,天然静默) */
-	public void retryUnsyncedAll() {
-		for (Agent agent : agentMapper.selectAll()) {
-			retryUnsynced(agent.getId());
-		}
-	}
-
-	/** 单条同步:拼文本 → 索引 → 落状态;失败不抛出,FAILED + 原因落库 */
+	/** 单条同步:拼文本(术语 + 同义词 + 释义 齐入索引,规范表述与别称/简称均可召回;缺失只省略)→ 索引 → 落状态;失败不抛出,FAILED + 原因落库 */
 	private void syncRow(AgentBizTerm term) {
 		try {
-			String content = buildContent(term);
-			vectorService.index(term.getAgentId(), KnowledgeType.TERM, term.getId(), SplitterType.WHOLE, content);
+			StringBuilder content = new StringBuilder("术语: ").append(term.getBusinessTerm());
+			if (StringUtils.hasText(term.getSynonyms())) {
+				content.append('\n').append("同义词: ").append(term.getSynonyms());
+			}
+			if (StringUtils.hasText(term.getDescription())) {
+				content.append('\n').append("释义: ").append(term.getDescription());
+			}
+			vectorService.index(term.getAgentId(), KnowledgeType.TERM, term.getId(), SplitterType.WHOLE,
+					content.toString());
 			writeStatus(term, EmbeddingStatus.SYNCED, null);
 			log.info("术语向量写入: agent={}, term={} (#{})", term.getAgentId(), term.getBusinessTerm(), term.getId());
 		}
@@ -167,18 +151,6 @@ public class AgentBizTermService {
 		}
 		term.setEmbeddingStatus(to);
 		term.setErrorMsg(errorMsg);
-	}
-
-	/** 向量化文本:术语 + 同义词 + 释义;同义词/释义缺失只省略、不失败(内容兜底);三者齐入索引,保证规范表述与别称/简称均可召回 */
-	private String buildContent(AgentBizTerm term) {
-		StringBuilder content = new StringBuilder("术语: ").append(term.getBusinessTerm());
-		if (StringUtils.hasText(term.getSynonyms())) {
-			content.append('\n').append("同义词: ").append(term.getSynonyms());
-		}
-		if (StringUtils.hasText(term.getDescription())) {
-			content.append('\n').append("释义: ").append(term.getDescription());
-		}
-		return content.toString();
 	}
 
 	/** 取术语行(按 agent + id,清单筛取);不存在抛 404 */

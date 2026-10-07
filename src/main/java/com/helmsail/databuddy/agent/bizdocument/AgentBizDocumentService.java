@@ -23,7 +23,6 @@ import com.helmsail.databuddy.agent.EmbeddingStatus;
 import com.helmsail.databuddy.exception.BusinessException;
 import com.helmsail.databuddy.exception.ErrorCode;
 import com.helmsail.databuddy.storage.LocalFileStorage;
-import com.helmsail.databuddy.vectorize.DelegatingEmbeddingModel;
 import com.helmsail.databuddy.vectorize.KnowledgeType;
 import com.helmsail.databuddy.vectorize.VectorService;
 import com.helmsail.databuddy.vectorize.splitter.SplitterType;
@@ -63,20 +62,16 @@ public class AgentBizDocumentService {
 
 	private final VectorService vectorService;
 
-	/** 委托门面:取当前模型名(删除只清现役分区) */
-	private final DelegatingEmbeddingModel embeddingModel;
-
 	/** 向量化后台队列(装配见 async 包):单线程 FIFO 串行,活过请求 */
 	private final TaskExecutor vectorSyncExecutor;
 
 	public AgentBizDocumentService(AgentBizDocumentMapper mapper, AgentMapper agentMapper,
-			LocalFileStorage fileStorage, VectorService vectorService, DelegatingEmbeddingModel embeddingModel,
+			LocalFileStorage fileStorage, VectorService vectorService,
 			@Qualifier("vectorSyncExecutor") TaskExecutor vectorSyncExecutor) {
 		this.mapper = mapper;
 		this.agentMapper = agentMapper;
 		this.fileStorage = fileStorage;
 		this.vectorService = vectorService;
-		this.embeddingModel = embeddingModel;
 		this.vectorSyncExecutor = vectorSyncExecutor;
 	}
 
@@ -165,7 +160,7 @@ public class AgentBizDocumentService {
 	public void delete(long agentId, long id) {
 		AgentBizDocument old = requireDocument(agentId, id);
 		mapper.deleteById(agentId, id);
-		vectorService.deleteByDims(old.getAgentId(), embeddingModel.modelName(), KnowledgeType.DOCUMENT, id);
+		vectorService.deleteEntry(old.getAgentId(), KnowledgeType.DOCUMENT, id);
 		fileStorage.delete(old.getStoragePath());
 		log.info("文档删除: agent={}, name={} (#{})", old.getAgentId(), old.getName(), id);
 	}

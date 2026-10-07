@@ -21,9 +21,9 @@ import lombok.extern.slf4j.Slf4j;
  * 向量服务:内容向量化的唯一出入口——原文 + 策略进,包内完成切分 → 向量化 → 落库,并负责删除 / 检索 / 盘点。
  * 元数据构成一棵树:agent → 嵌入模型 → 知识类型 → 知识条目;向量按模型分区,写删只作用现役分区——
  * 切换模型后新旧互不串用、切回原模型即恢复,历史分区为回滚快照,报废由运维台整分区回收。
- * 字段约定统一收在 VectorMetadata,过滤表达式由 filterOf 按层次前缀拼装(空层短路);对外四个通用操作:
- * index(写入)/ deleteByDims(按前缀删除)/ search(检索,单类型) / vectorOverview(元数据层次盘点),
- * 业务语义由上层按前缀组合,本服务不做自动删除
+ * 字段约定统一收在 VectorMetadata,过滤表达式由 filterOf 按层次前缀拼装(空层短路);对外五个操作:
+ * index(写入)/ deleteEntry(删条目,现役分区)/ deleteByDims(按前缀删除)/ search(检索,单类型)/ vectorOverview(元数据层次盘点),
+ * 级联与运维回收由上层按前缀组合,本服务不做自动删除
  */
 @Slf4j
 @Service
@@ -74,12 +74,17 @@ public class VectorService {
 		log.info("向量写入: agent={}, knowledge={}#{}, chunks={}", agentId, knowledgeType, knowledgeId, chunks.size());
 	}
 
+	/** 业务删条目:只清现役分区(历史分区快照由运维台回收);模型名在本服务内部取,上层无需感知 */
+	public int deleteEntry(long agentId, KnowledgeType knowledgeType, long knowledgeId) {
+		return deleteByDims(agentId, embeddingModel.modelName(), knowledgeType, knowledgeId);
+	}
+
 	/**
 	 * 按元数据层次前缀删除:filterOf 拼表达式 → 先按条件检索取回文档 id、再按 id 删除
 	 * (SimpleVectorStore 未实现 doDelete(Filter.Expression),父类默认抛 UnsupportedOperationException,已实测;
 	 * 占位 query + 阈值 0,结果完全由过滤条件决定)。
 	 * 从左往右,一旦某层为空即短路——该层及其后各层全部删除(agent 为 long 必带,从类型上杜绝全量索引删除)。
-	 * 由上层按语义组合:业务删条目传当前模型名(只清现役分区,历史分区快照由运维台回收);
+	 * 由上层按语义组合:业务删条目走 deleteEntry(现役分区,历史分区快照由运维台回收);
 	 * agent 级联传 (A, null, null, null) 即全部分区全删;运维回收传 (A, 模型, 类型)。
 	 * 匹配集可能很大(层空 = 整棵子树):内置分批——每批删 DELETE_BATCH_SIZE 条,循环直至清空;返回删除块数;
 	 * 未配嵌入模型时静默返回 0(级联删除不因向量侧不可用而堵死)

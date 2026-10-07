@@ -18,28 +18,22 @@ import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.helmsail.databuddy.agent.bizdocument.AgentBizDocument;
-import com.helmsail.databuddy.agent.bizdocument.AgentBizDocumentService;
 import com.helmsail.databuddy.agent.bizqa.AgentBizQa;
-import com.helmsail.databuddy.agent.bizqa.AgentBizQaService;
 import com.helmsail.databuddy.agent.biztable.AgentBizTable;
-import com.helmsail.databuddy.agent.biztable.AgentBizTableService;
 import com.helmsail.databuddy.agent.bizterm.AgentBizTerm;
-import com.helmsail.databuddy.agent.bizterm.AgentBizTermService;
 import com.helmsail.databuddy.exception.BusinessException;
 import com.helmsail.databuddy.exception.ErrorCode;
 import com.helmsail.databuddy.result.ApiResponse;
 import com.helmsail.databuddy.vectorize.KnowledgeType;
 import com.helmsail.databuddy.vectorize.VectorPresence;
-import com.helmsail.databuddy.vectorize.VectorService;
 import com.helmsail.databuddy.vectorize.splitter.SplitterType;
 
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
 /**
- * 智能体入口:agent 本体与检索走 AgentService,四子域管理动作直调各子域 service(域内允许);
- * 向量分区运维(状态查看 / 按模型回收)直调 VectorService——向量具业务语义,入口归属 agent 端;
- * 只做 HTTP 层,语义全在 service;成功返回统一信封(ApiResponse),错误由全局异常处理器转同形信封。
+ * 智能体入口:全部动作薄转发 AgentService(域内唯一门面,含向量分区运维),本类只做 HTTP 层;
+ * 成功返回统一信封(ApiResponse),错误由全局异常处理器转同形信封。
  * 线程边界:触达模型 / 向量的动作含阻塞式 Spring AI 调用,统一经 reactive/reactiveVoid 移入弹性线程
  * (在 WebFlux 事件循环线程上会被 Reactor 拒绝:block() not supported in thread reactor-http-epoll,已实证)
  */
@@ -50,25 +44,8 @@ public class AgentController {
 
 	private final AgentService agentService;
 
-	private final AgentBizTableService agentBizTableService;
-
-	private final AgentBizTermService agentBizTermService;
-
-	private final AgentBizQaService agentBizQaService;
-
-	private final AgentBizDocumentService agentBizDocumentService;
-
-	private final VectorService vectorService;
-
-	public AgentController(AgentService agentService, AgentBizTableService agentBizTableService,
-			AgentBizTermService agentBizTermService, AgentBizQaService agentBizQaService,
-			AgentBizDocumentService agentBizDocumentService, VectorService vectorService) {
+	public AgentController(AgentService agentService) {
 		this.agentService = agentService;
-		this.agentBizTableService = agentBizTableService;
-		this.agentBizTermService = agentBizTermService;
-		this.agentBizQaService = agentBizQaService;
-		this.agentBizDocumentService = agentBizDocumentService;
-		this.vectorService = vectorService;
 	}
 
 	/**
@@ -126,22 +103,12 @@ public class AgentController {
 		return reactive(() -> agentService.retrieve(agentId, query, topK));
 	}
 
-	/** 重建知识向量(表 / 术语 / 问答;内存向量库重启丢失后的恢复入口) */
-	@PostMapping("/{agentId}/knowledge/rebuild")
-	public Mono<ApiResponse<Void>> rebuildKnowledge(@PathVariable("agentId") long agentId) {
-		return reactiveVoid(() -> {
-			agentBizTableService.sync(agentId);
-			agentBizTermService.rebuildAll(agentId);
-			agentBizQaService.rebuildAll(agentId);
-		});
-	}
-
 	// ============ 向量分区(vectorize) ============
 
 	/** 向量情况:全部 agent × 模型 × 知识类型的存在记录(基于向量库元数据原始包装;失效 agentId 由展示侧对照 agent 列表判定) */
 	@GetMapping("/vectors")
 	public Mono<ApiResponse<List<VectorPresence>>> vectors() {
-		return reactive(vectorService::vectorOverview);
+		return reactive(agentService::vectorOverview);
 	}
 
 	/** 手动删除 (agent, 模型, 知识类型) 三维度向量(三维度由外部传入,入参校验在本层;向量操作走弹性线程);data = 删除块数 */
@@ -152,7 +119,7 @@ public class AgentController {
 			if (!StringUtils.hasText(model)) {
 				throw new BusinessException(ErrorCode.INVALID_INPUT, "模型名不能为空");
 			}
-			return vectorService.deleteByDims(agentId, model, KnowledgeType.from(knowledgeType), null);
+			return agentService.deleteVectors(agentId, model, KnowledgeType.from(knowledgeType));
 		});
 	}
 
@@ -161,32 +128,26 @@ public class AgentController {
 	/** 表绑定清单 */
 	@GetMapping("/{agentId}/biz-tables")
 	public ApiResponse<List<AgentBizTable>> listTables(@PathVariable("agentId") long agentId) {
-		return ApiResponse.success(agentBizTableService.list(agentId));
+		return ApiResponse.success(agentService.listTables(agentId));
 	}
 
-	/** 绑定业务表(校验库与表存在;已绑定幂等跳过;新增行 PENDING,再触发同步) */
+	/** 绑定业务表(校验库与表存在;已绑定幂等跳过;首刷由前端连带调刷新入口) */
 	@PostMapping("/{agentId}/biz-tables")
 	public ApiResponse<Void> bindTables(@PathVariable("agentId") long agentId, @RequestBody BindTablesRequest request) {
-		agentBizTableService.bind(agentId, request.databaseConfigId(), request.tableNames());
+		agentService.bindTables(agentId, request.databaseConfigId(), request.tableNames());
 		return ApiResponse.success();
 	}
 
 	/** 解绑(删行 + 删向量;id 不属于该 agent 的静默跳过;向量清理触达模型,走弹性线程) */
 	@DeleteMapping("/{agentId}/biz-tables")
 	public Mono<ApiResponse<Void>> unbindTables(@PathVariable("agentId") long agentId, @RequestBody List<Long> ids) {
-		return reactiveVoid(() -> agentBizTableService.unbind(agentId, ids));
+		return reactiveVoid(() -> agentService.unbindTables(agentId, ids));
 	}
 
-	/** 表向量化:全量重建(绑定后首刷 / 模型切换后重刷;模型调用走弹性线程) */
+	/** 表向量刷新:实时查业务库结构重刷全部绑定表(人工入口:绑定后 / 结构变化 / 模型切换后使用前调用;模型调用走弹性线程) */
 	@PostMapping("/{agentId}/biz-tables/sync")
 	public Mono<ApiResponse<Void>> syncTables(@PathVariable("agentId") long agentId) {
-		return reactiveVoid(() -> agentBizTableService.sync(agentId));
-	}
-
-	/** 表向量化重试:仅 PENDING / FAILED 行(手动与定时共用入口;模型调用走弹性线程) */
-	@PostMapping("/{agentId}/biz-tables/retry")
-	public Mono<ApiResponse<Void>> retryTables(@PathVariable("agentId") long agentId) {
-		return reactiveVoid(() -> agentBizTableService.retryUnsynced(agentId));
+		return reactiveVoid(() -> agentService.syncTables(agentId));
 	}
 
 	// ============ 业务术语(bizterm) ============
@@ -194,32 +155,32 @@ public class AgentController {
 	/** 术语清单 */
 	@GetMapping("/{agentId}/terms")
 	public ApiResponse<List<AgentBizTerm>> listTerms(@PathVariable("agentId") long agentId) {
-		return ApiResponse.success(agentBizTermService.list(agentId));
+		return ApiResponse.success(agentService.listTerms(agentId));
 	}
 
 	/** 新增术语(落库后立即同步向量;模型调用走弹性线程) */
 	@PostMapping("/{agentId}/terms")
 	public Mono<ApiResponse<AgentBizTerm>> addTerm(@PathVariable("agentId") long agentId, @RequestBody AgentBizTerm term) {
-		return reactive(() -> agentBizTermService.add(agentId, term));
+		return reactive(() -> agentService.addTerm(agentId, term));
 	}
 
 	/** 修改术语(术语 / 同义词 / 释义,立即重同步;模型调用走弹性线程) */
 	@PostMapping("/{agentId}/terms/{id}")
 	public Mono<ApiResponse<AgentBizTerm>> updateTerm(@PathVariable("agentId") long agentId, @PathVariable("id") long id,
 			@RequestBody AgentBizTerm term) {
-		return reactive(() -> agentBizTermService.update(agentId, id, term));
+		return reactive(() -> agentService.updateTerm(agentId, id, term));
 	}
 
 	/** 删除术语(行 + 向量;向量清理触达模型,走弹性线程) */
 	@DeleteMapping("/{agentId}/terms/{id}")
 	public Mono<ApiResponse<Void>> deleteTerm(@PathVariable("agentId") long agentId, @PathVariable("id") long id) {
-		return reactiveVoid(() -> agentBizTermService.delete(agentId, id));
+		return reactiveVoid(() -> agentService.deleteTerm(agentId, id));
 	}
 
 	/** 术语向量化重试:仅 PENDING / FAILED 行(模型调用走弹性线程) */
 	@PostMapping("/{agentId}/terms/retry")
 	public Mono<ApiResponse<Void>> retryTerms(@PathVariable("agentId") long agentId) {
-		return reactiveVoid(() -> agentBizTermService.retryUnsynced(agentId));
+		return reactiveVoid(() -> agentService.retryTerms(agentId));
 	}
 
 	// ============ 业务问答(bizqa) ============
@@ -227,32 +188,32 @@ public class AgentController {
 	/** 问答清单 */
 	@GetMapping("/{agentId}/qa")
 	public ApiResponse<List<AgentBizQa>> listQa(@PathVariable("agentId") long agentId) {
-		return ApiResponse.success(agentBizQaService.list(agentId));
+		return ApiResponse.success(agentService.listQa(agentId));
 	}
 
 	/** 新增问答(落库后立即同步问题向量;答案可后补;模型调用走弹性线程) */
 	@PostMapping("/{agentId}/qa")
 	public Mono<ApiResponse<AgentBizQa>> addQa(@PathVariable("agentId") long agentId, @RequestBody AgentBizQa qa) {
-		return reactive(() -> agentBizQaService.add(agentId, qa));
+		return reactive(() -> agentService.addQa(agentId, qa));
 	}
 
 	/** 修改问答(仅问题变化才重同步;答案不入向量;模型调用走弹性线程) */
 	@PostMapping("/{agentId}/qa/{id}")
 	public Mono<ApiResponse<AgentBizQa>> updateQa(@PathVariable("agentId") long agentId, @PathVariable("id") long id,
 			@RequestBody AgentBizQa qa) {
-		return reactive(() -> agentBizQaService.update(agentId, id, qa));
+		return reactive(() -> agentService.updateQa(agentId, id, qa));
 	}
 
 	/** 删除问答(行 + 向量;向量清理触达模型,走弹性线程) */
 	@DeleteMapping("/{agentId}/qa/{id}")
 	public Mono<ApiResponse<Void>> deleteQa(@PathVariable("agentId") long agentId, @PathVariable("id") long id) {
-		return reactiveVoid(() -> agentBizQaService.delete(agentId, id));
+		return reactiveVoid(() -> agentService.deleteQa(agentId, id));
 	}
 
 	/** 问答向量化重试:仅 PENDING / FAILED 行(模型调用走弹性线程) */
 	@PostMapping("/{agentId}/qa/retry")
 	public Mono<ApiResponse<Void>> retryQa(@PathVariable("agentId") long agentId) {
-		return reactiveVoid(() -> agentBizQaService.retryUnsynced(agentId));
+		return reactiveVoid(() -> agentService.retryQa(agentId));
 	}
 
 	// ============ 业务文档(bizdocument) ============
@@ -260,7 +221,7 @@ public class AgentController {
 	/** 文档清单 */
 	@GetMapping("/{agentId}/documents")
 	public ApiResponse<List<AgentBizDocument>> listDocuments(@PathVariable("agentId") long agentId) {
-		return ApiResponse.success(agentBizDocumentService.list(agentId));
+		return ApiResponse.success(agentService.listDocuments(agentId));
 	}
 
 	/** 上传文档(先落行、再落文件,落定后立即返回,后台异步切分向量化;name / splitterType 走查询参数,缺省取文件名 / PARAGRAPH) */
@@ -268,8 +229,8 @@ public class AgentController {
 	public Mono<ApiResponse<AgentBizDocument>> uploadDocument(@PathVariable("agentId") long agentId,
 			@RequestPart("file") FilePart file, @RequestParam(name = "name", required = false) String name,
 			@RequestParam(name = "splitterType", required = false) String splitterType) {
-		return agentBizDocumentService
-			.upload(agentId, file, name, splitterType == null ? null : SplitterType.from(splitterType))
+		return agentService
+			.uploadDocument(agentId, file, name, splitterType == null ? null : SplitterType.from(splitterType))
 			.map(ApiResponse::success);
 	}
 
@@ -277,19 +238,19 @@ public class AgentController {
 	@PostMapping("/{agentId}/documents/{id}")
 	public ApiResponse<AgentBizDocument> updateDocument(@PathVariable("agentId") long agentId,
 			@PathVariable("id") long id, @RequestBody AgentBizDocument document) {
-		return ApiResponse.success(agentBizDocumentService.update(agentId, id, document));
+		return ApiResponse.success(agentService.updateDocument(agentId, id, document));
 	}
 
 	/** 删除文档(行 + 向量 + 物理文件;向量清理触达模型,走弹性线程) */
 	@DeleteMapping("/{agentId}/documents/{id}")
 	public Mono<ApiResponse<Void>> deleteDocument(@PathVariable("agentId") long agentId, @PathVariable("id") long id) {
-		return reactiveVoid(() -> agentBizDocumentService.delete(agentId, id));
+		return reactiveVoid(() -> agentService.deleteDocument(agentId, id));
 	}
 
 	/** 文档向量化重试:仅 PENDING / FAILED 行(模型调用走弹性线程) */
 	@PostMapping("/{agentId}/documents/retry")
 	public Mono<ApiResponse<Void>> retryDocuments(@PathVariable("agentId") long agentId) {
-		return reactiveVoid(() -> agentBizDocumentService.retryUnsynced(agentId));
+		return reactiveVoid(() -> agentService.retryDocuments(agentId));
 	}
 
 	/** 绑定请求体:业务库配置 + 表名清单 */
