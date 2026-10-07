@@ -1,7 +1,8 @@
 -- 系统库初始化脚本:启动幂等执行(建表 IF NOT EXISTS,可反复跑)
 -- 组织约定:表结构(DDL)统一放前面,初始化数据(种子 INSERT)统一放最后
--- 内容:节点提示词模板(node_prompt_template)、会话记忆(session_memory)、模型配置(ai_model_config)、业务库配置(biz_database_config)与表级关联(biz_table_relation)、智能体(agent)与表绑定(agent_biz_table)、业务术语(agent_biz_term)、业务问答(agent_biz_qa)、业务文档(agent_biz_document)、会话(session)与会话消息(session_message)
--- 对话记忆:全自研实现(SummarizingChatMemory,实现 Spring AI 官方 ChatMemory 接口):消息与摘要一体落 session_memory(本脚本建表)
+-- 内容:节点提示词模板(node_prompt_template)、会话记忆(session_memory)、智能体记忆(agent_memory)、模型配置(ai_model_config)、业务库配置(biz_database_config)与表级关联(biz_table_relation)、智能体(agent)与表绑定(agent_biz_table)、业务术语(agent_biz_term)、业务问答(agent_biz_qa)、业务文档(agent_biz_document)、会话(session)与会话消息(session_message)
+-- 对话记忆:全自研(MemoryService:表只存、策略在此):一行 = 一段带标识文本("用户: …" / "助手: …" / 摘要行),窗口 20 条消息超窗压缩成摘要(写回最老行,滚动更新)
+-- agent 记忆(沉淀):AI 工具自行增删改(口径/规则/偏好类),用户可看可改可删;不向量化,要进检索由用户升级为术语
 
 -- ============ 表结构 ============
 
@@ -18,15 +19,23 @@ CREATE TABLE IF NOT EXISTS node_prompt_template (
 	UNIQUE (name, enabled)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- 会话记忆(自研 ChatMemory 实现):一行 = 一条消息;窗口保留最近 20 条(即 10 轮),
--- 挤出窗口的最早消息与旧摘要合并压缩成新摘要(message_type = SUMMARY,每会话至多一行、原地滚动覆盖)
+-- 会话记忆:一行 = 一段自带标识的文本("用户: …" / "助手: …" / 摘要行"【此前对话摘要】…");表内至多 21 行(20 条消息 + 1 行摘要),策略在 MemoryService
 CREATE TABLE IF NOT EXISTS session_memory (
 	id              BIGINT AUTO_INCREMENT PRIMARY KEY,
-	conversation_id VARCHAR(64)  NOT NULL,
-	message_type    VARCHAR(16)  NOT NULL,  -- USER / ASSISTANT / SUMMARY
+	session_id      VARCHAR(64)  NOT NULL,
 	content         TEXT         NOT NULL,
 	create_time     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
-	INDEX idx_conversation (conversation_id, id)
+	INDEX idx_session (session_id, id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- 智能体记忆(沉淀):一行 = 一条临时沉淀(口径 / 规则 / 偏好;AI 工具增删改,用户可看可改可删);不向量化
+CREATE TABLE IF NOT EXISTS agent_memory (
+	id          BIGINT        AUTO_INCREMENT PRIMARY KEY,
+	agent_id    BIGINT        NOT NULL,
+	content     VARCHAR(1024) NOT NULL,
+	create_time DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	update_time DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+	INDEX idx_agent (agent_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- 模型配置:OpenAI 兼容协议;同时生效的 CHAT 与 EMBEDDING 各一个
@@ -186,6 +195,9 @@ SELECT 'intent-recognition',
 【最新用户输入】
 {query}
 
+【智能体记忆(此前沉淀的口径 / 规则 / 偏好)】
+{agent_memory}
+
 判定标准:
 - chat(闲聊或无关指令):纯情感或礼貌用语(如“哈哈哈”“谢谢你”);关于 AI 自身的元问题(如“你是谁”);与数据完全无关的请求(如“帮我写一首诗”“今天天气怎么样”);无意义乱码。
 - data_analysis(可能的数据分析请求):含数据关键词(查询/分析/统计/排名/对比/平均值等);含业务名词或指标(如“销售额”“xx部门”“那个员工”);多轮中的指代与追问(如“那个呢”“他们呢”“具体一点”);口语化但实质是查数据(如“我们公司哪个产品卖得最好”)。
@@ -195,6 +207,11 @@ SELECT 'intent-recognition',
 2) 历史(在聊员工工资),输入“哈哈哈哈,太棒了!” → {"classification": "chat", "response": "不客气!我可以继续帮你查询和分析已连接的数据。"}(最新输入是纯情感时,即使历史在聊数据,也归 chat)
 3) 历史(在聊员工工资),输入“他们呢?” → {"classification": "data_analysis", "response": ""}(指代与追问归 data_analysis)
 4) 历史(无),输入“我们公司哪个产品卖得最好?” → {"classification": "data_analysis", "response": ""}(口语化但本质是数据查询)
+
+记忆维护(按需,不要为了调用而调用):
+- 用户明确给出或纠正业务口径、规则、偏好,且值得以后一直记住时,调用 save_memory(每条只记一个事实,简洁陈述);
+- 清单中记忆有误或过时,调用 update_memory / delete_memory(用清单中的 id);
+- 普通闲聊、一次性问题不沉淀。
 
 要求:以本轮用户输入为主,历史仅用于理解指代与追问(如“那上个月的呢”);仅输出 JSON,不要输出其他内容;classification 必须为 data_analysis 或 chat(英文小写);chat 时 response 是直接给用户的友好简短回复,并简要说明可以帮忙查询和分析已连接的数据;data_analysis 时 response 为空字符串。',
 1, 1
@@ -435,11 +452,16 @@ SELECT 'report-generator',
 【分步执行结果(含 SQL 结果 JSON 与 Python 分析文本;过长已截断)】
 {results}
 
+【智能体记忆(此前沉淀的口径 / 规则 / 偏好)】
+{agent_memory}
+
 报告要求:
 1) 用 Markdown 组织:先给结论摘要(直接回答用户问题),再分节展开关键数据与发现,最后给出可行的建议;
 2) 只基于执行结果中的数据与结论撰写,严禁编造数字;数据被截断时注明可能不完整;
 3) 涉及对比、排名时给出具体数值;适当时用 Markdown 表格承载对比数据;
-4) 语言专业、简练,面向业务读者;报告结尾无需重复罗列执行过程。',
+4) 语言专业、简练,面向业务读者;报告结尾无需重复罗列执行过程。
+
+记忆维护(按需,不要为了调用而调用):本次分析中如确认了新的稳定业务口径 / 规则(不含本次数据结论),调用 save_memory 沉淀;与已有记忆冲突时调用 update_memory 修正(用清单中的 id)。',
 1, 1
 FROM DUAL
 WHERE NOT EXISTS (SELECT 1 FROM node_prompt_template WHERE name = 'report-generator');

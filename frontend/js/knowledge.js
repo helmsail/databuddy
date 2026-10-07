@@ -1,6 +1,6 @@
 /* ============================================================
- * knowledge.js —— 智能体知识库:数据表 / 文档 / 术语 / 问答 / 检索测试
- * 五栏与后端 /agent/{id}/biz-tables|documents|terms|qa|retrieve 一一对应
+ * knowledge.js —— 智能体知识库:数据表 / 文档 / 术语 / 问答 / 记忆 / 检索测试
+ * 六栏与后端 /agent/{id}/biz-tables|documents|terms|qa|memories|retrieve 一一对应
  * ============================================================ */
 
 async function mountKnowledge(view) {
@@ -13,7 +13,7 @@ async function mountKnowledge(view) {
     <div class="page-head">
       <div>
         <h1>智能体知识库</h1>
-        <p>${esc(agent.name)} · 维护专属知识资源(数据表 / 文档 / 术语 / 问答),支持向量召回</p>
+        <p>${esc(agent.name)} · 维护专属知识资源(数据表 / 文档 / 术语 / 问答),支持向量召回;沉淀记忆由对话自动积累</p>
       </div>
     </div>
     <div class="tabbar" id="kb-tabs">
@@ -21,6 +21,7 @@ async function mountKnowledge(view) {
       <button data-tab="docs">文档</button>
       <button data-tab="terms">术语</button>
       <button data-tab="qa">问答</button>
+      <button data-tab="memory">记忆</button>
       <button data-tab="retrieve">检索测试</button>
     </div>
     <div id="kb-body"><div class="empty">加载中…</div></div>`;
@@ -45,6 +46,7 @@ async function renderKbTab(tab) {
     else if (tab === 'docs') await renderKbDocs(body);
     else if (tab === 'terms') await renderKbTerms(body);
     else if (tab === 'qa') await renderKbQa(body);
+    else if (tab === 'memory') await renderKbMemory(body);
     else if (tab === 'retrieve') renderKbRetrieve(body);
   } catch (e) {
     body.innerHTML = `<div class="empty">加载失败:${esc(e.message)}</div>`;
@@ -414,7 +416,7 @@ async function renderKbTerms(body) {
   });
 }
 
-function showTermModal(row) {
+function showTermModal(row, prefillDesc) {
   const agent = activeAgent();
   const isEdit = !!row;
   openModal({
@@ -423,7 +425,7 @@ function showTermModal(row) {
       <div class="field"><label>术语 <span class="req">*</span></label><input id="tm-term" value="${esc(row ? row.businessTerm : '')}" placeholder="如:GMV"></div>
       <div class="field"><label>同义词(逗号分隔,可空)</label><input id="tm-syn" value="${esc(row ? row.synonyms || '' : '')}" placeholder="如:成交总额,商品交易总额"></div>
     </div>
-    <div class="field" style="margin-top:12px"><label>释义(可空)</label><textarea id="tm-desc" rows="3" placeholder="业务口径说明,检索命中后回源给模型">${esc(row ? row.description || '' : '')}</textarea></div>`,
+    <div class="field" style="margin-top:12px"><label>释义(可空)</label><textarea id="tm-desc" rows="3" placeholder="业务口径说明,检索命中后回源给模型">${esc(row ? row.description || '' : prefillDesc || '')}</textarea></div>`,
     footer: `<button class="btn secondary" type="button" data-cancel>取消</button><button class="btn" type="button" data-ok>${isEdit ? '保存' : '添加并同步'}</button>`,
     onMount: (bodyEl, footEl, close) => {
       $('[data-cancel]', footEl).onclick = close;
@@ -544,6 +546,106 @@ function showQaModal(row) {
           toast(e.message, true);
         }
       };
+    },
+  });
+}
+
+/* ================= 记忆 ================= */
+async function renderKbMemory(body) {
+  const agent = activeAgent();
+  const rows = await api('GET', `/agent/${agent.id}/memories`);
+  body.innerHTML = `
+    <div class="tab-toolbar">
+      <span class="hint">对话中确认的口径 / 规则由 AI 自动沉淀;不进入向量检索,要供召回请「转为术语」</span>
+    </div>
+    <div class="tbl-wrap">
+      <table class="tbl">
+        <thead><tr><th>内容</th><th style="width:160px">更新时间</th><th style="width:200px;text-align:right">操作</th></tr></thead>
+        <tbody>
+          ${
+            rows
+              .map(
+                (m) => `<tr>
+            <td class="cell-main">${esc(m.content)}</td>
+            <td class="dim">${fmtTime(m.updateTime)}</td>
+            <td><div class="actions">
+              <button class="btn link" data-medit="${m.id}">编辑</button>
+              <button class="btn link" data-mterm="${m.id}">转为术语</button>
+              <button class="btn link danger" data-mrm="${m.id}">删除</button>
+            </div></td>
+          </tr>`
+              )
+              .join('') || '<tr><td colspan="3" class="empty">暂无沉淀记忆;对话里给出或纠正口径后会自动积累</td></tr>'
+          }
+        </tbody>
+      </table>
+    </div>`;
+
+  $$('[data-medit]').forEach((b) => {
+    const row = rows.find((m) => String(m.id) === b.dataset.medit);
+    b.onclick = () => showMemoryModal(row);
+  });
+  $$('[data-mterm]').forEach((b) => {
+    const row = rows.find((m) => String(m.id) === b.dataset.mterm);
+    b.onclick = () => promoteMemoryToTerm(row);
+  });
+  $$('[data-mrm]').forEach((b) => {
+    b.onclick = () =>
+      confirmBox({
+        title: '删除记忆',
+        message: '删除这条沉淀记忆?(不影响对话历史)',
+        confirmText: '删除',
+        danger: true,
+        onConfirm: async () => {
+          try {
+            await api('DELETE', `/agent/${agent.id}/memories/${b.dataset.mrm}`);
+            toast('已删除');
+            renderKbTab('memory');
+          } catch (e) {
+            toast(e.message, true);
+          }
+        },
+      });
+  });
+}
+
+function showMemoryModal(row) {
+  const agent = activeAgent();
+  openModal({
+    title: '编辑记忆',
+    body: `<div class="field"><label>记忆内容</label><textarea id="mm-content" rows="3">${esc(row.content)}</textarea></div>`,
+    footer: `<button class="btn secondary" type="button" data-cancel>取消</button><button class="btn" type="button" data-ok>保存</button>`,
+    onMount: (bodyEl, footEl, close) => {
+      const input = $('#mm-content', bodyEl);
+      input.focus();
+      $('[data-cancel]', footEl).onclick = close;
+      $('[data-ok]', footEl).onclick = async () => {
+        const content = input.value.trim();
+        if (!content) return toast('内容不能为空', true);
+        try {
+          await api('POST', `/agent/${agent.id}/memories/${row.id}`, { content });
+          toast('已保存');
+          close();
+          renderKbTab('memory');
+        } catch (e) {
+          toast(e.message, true);
+        }
+      };
+    },
+  });
+}
+
+/** 转为术语:带内容切到术语页签预填,由用户确认 / 补全后提交(升级为正式知识,进入向量检索) */
+function promoteMemoryToTerm(row) {
+  confirmBox({
+    title: '转为术语',
+    message: '将切到「术语」页签并预填这条记忆;确认术语与释义后提交(提交后进入向量检索)。',
+    confirmText: '去术语页',
+    danger: false,
+    onConfirm: async () => {
+      $$('#kb-tabs button').forEach((b) => b.classList.toggle('active', b.dataset.tab === 'terms'));
+      await renderKbTab('terms');
+      showTermModal(null, row.content);
     },
   });
 }

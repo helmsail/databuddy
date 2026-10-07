@@ -23,6 +23,7 @@ import com.helmsail.databuddy.agent.biztable.AgentBizTable;
 import com.helmsail.databuddy.agent.bizterm.AgentBizTerm;
 import com.helmsail.databuddy.exception.BusinessException;
 import com.helmsail.databuddy.exception.ErrorCode;
+import com.helmsail.databuddy.memory.AgentMemory;
 import com.helmsail.databuddy.result.ApiResponse;
 import com.helmsail.databuddy.vectorize.KnowledgeType;
 import com.helmsail.databuddy.vectorize.VectorPresence;
@@ -251,6 +252,28 @@ public class AgentController {
 	@PostMapping("/{agentId}/documents/retry")
 	public Mono<ApiResponse<Void>> retryDocuments(@PathVariable("agentId") long agentId) {
 		return reactiveVoid(() -> agentService.retryDocuments(agentId));
+	}
+
+	// ============ 智能体记忆(memory) ============
+
+	/** 记忆清单(AI 自行沉淀的口径 / 规则;用户可修改 / 删除) */
+	@GetMapping("/{agentId}/memories")
+	public ApiResponse<List<AgentMemory>> listMemories(@PathVariable("agentId") long agentId) {
+		return ApiResponse.success(agentService.listMemories(agentId));
+	}
+
+	/** 修改记忆内容(用户修正) */
+	@PostMapping("/{agentId}/memories/{id}")
+	public ApiResponse<AgentMemory> updateMemory(@PathVariable("agentId") long agentId, @PathVariable("id") long id,
+			@RequestBody AgentMemory memory) {
+		return ApiResponse.success(agentService.updateMemory(agentId, id, memory.getContent()));
+	}
+
+	/** 删除记忆(用户清理) */
+	@DeleteMapping("/{agentId}/memories/{id}")
+	public ApiResponse<Void> deleteMemory(@PathVariable("agentId") long agentId, @PathVariable("id") long id) {
+		agentService.deleteMemory(agentId, id);
+		return ApiResponse.success();
 	}
 
 	/** 绑定请求体:业务库配置 + 表名清单 */

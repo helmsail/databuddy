@@ -29,6 +29,9 @@ import com.helmsail.databuddy.bizdatabase.BizTableRelation;
 import com.helmsail.databuddy.bizdatabase.jdbc.config.DbType;
 import com.helmsail.databuddy.exception.BusinessException;
 import com.helmsail.databuddy.exception.ErrorCode;
+import com.helmsail.databuddy.memory.AgentMemory;
+import com.helmsail.databuddy.memory.MemoryService;
+import com.helmsail.databuddy.session.Session;
 import com.helmsail.databuddy.session.SessionService;
 import com.helmsail.databuddy.vectorize.KnowledgeType;
 import com.helmsail.databuddy.vectorize.VectorMetadata;
@@ -41,9 +44,9 @@ import reactor.core.publisher.Mono;
 
 /**
  * 智能体服务:agent 域的唯一对外口(身份 + 跨域横切 + 检索用例 + 知识子域全量门面);域外(含 HTTP 层)只认本类。
- * 知识子域操作(表 / 术语 / 问答 / 文档 / 向量盘点)全部薄转发,逻辑归各子域 Service,本类不加工;
+ * 知识子域操作(表 / 术语 / 问答 / 文档 / 记忆 / 向量盘点)全部薄转发,逻辑归各子域 Service,本类不加工;
  * 检索:跨四类来源向量命中 + 按来源回源补齐(QA 补答案、文档补名称;术语/表块内容自足);
- * 级联删除:四域逐行清(行 + 向量 + 物理文件)+ 会话域(行 + 消息)→ 向量兜底清扫 → 删 agent 行;
+ * 级联删除:四域逐行清(行 + 向量 + 物理文件)+ 会话域(行 + 消息 + 跨图记忆/摘要)+ agent 沉淀记忆 → 向量兜底清扫 → 删 agent 行;
  * 模型切换事件:术语 / 问答 / 文档已同步行标记失效(原因=切换),交重试管线在新分区重建;表域无状态字段,由人工刷新入口覆盖
  */
 @Slf4j
@@ -60,6 +63,8 @@ public class AgentService {
 
 	private final AgentBizDocumentService agentBizDocumentService;
 
+	private final MemoryService memoryService;
+
 	private final SessionService sessionService;
 
 	private final VectorService vectorService;
@@ -68,13 +73,14 @@ public class AgentService {
 
 	public AgentService(AgentMapper agentMapper, AgentBizTableService agentBizTableService,
 			AgentBizTermService agentBizTermService, AgentBizQaService agentBizQaService,
-			AgentBizDocumentService agentBizDocumentService, SessionService sessionService, VectorService vectorService,
-			BizDatabaseService bizDatabaseService) {
+			AgentBizDocumentService agentBizDocumentService, MemoryService memoryService,
+			SessionService sessionService, VectorService vectorService, BizDatabaseService bizDatabaseService) {
 		this.agentMapper = agentMapper;
 		this.agentBizTableService = agentBizTableService;
 		this.agentBizTermService = agentBizTermService;
 		this.agentBizQaService = agentBizQaService;
 		this.agentBizDocumentService = agentBizDocumentService;
+		this.memoryService = memoryService;
 		this.sessionService = sessionService;
 		this.vectorService = vectorService;
 		this.bizDatabaseService = bizDatabaseService;
@@ -108,7 +114,7 @@ public class AgentService {
 		return agentMapper.selectById(id);
 	}
 
-	/** 删除智能体(级联):四域逐行清(行 + 向量 + 物理文件)+ 会话域(行 + 消息)→ 向量兜底清扫 → 删 agent 行 */
+	/** 删除智能体(级联):四域逐行清(行 + 向量 + 物理文件)+ 会话域(行 + 消息 + 跨图记忆/摘要)+ agent 沉淀记忆 → 向量兜底清扫 → 删 agent 行 */
 	@Transactional
 	public void delete(long id) {
 		Agent agent = requireAgent(id);
@@ -125,7 +131,11 @@ public class AgentService {
 		for (AgentBizDocument document : agentBizDocumentService.list(id)) {
 			agentBizDocumentService.delete(id, document.getId());
 		}
+		for (Session session : sessionService.listSessions(id)) {
+			memoryService.deleteBySession(session.getId());   // 跨图记忆 + 摘要(先于会话删除,防孤儿)
+		}
 		sessionService.deleteSessionsByAgent(id);   // 会话域:行 + 消息
+		memoryService.deleteByAgent(id);   // agent 沉淀记忆
 		vectorService.deleteByDims(id, null, null, null);   // 兜底:清残留向量(防历史脏数据)
 		agentMapper.deleteById(id);
 		log.info("agent 删除(级联): {} (#{})", agent.getName(), id);
@@ -326,6 +336,23 @@ public class AgentService {
 	/** 文档向量化重试:仅 PENDING / FAILED 行 */
 	public void retryDocuments(long agentId) {
 		agentBizDocumentService.retryUnsynced(agentId);
+	}
+
+	// ---- 记忆(用户面:AI 沉淀的临时记忆,可看可改可删) ----
+
+	/** 记忆清单(沉淀先后) */
+	public List<AgentMemory> listMemories(long agentId) {
+		return memoryService.list(agentId);
+	}
+
+	/** 修改记忆内容(用户修正 AI 沉淀) */
+	public AgentMemory updateMemory(long agentId, long id, String content) {
+		return memoryService.update(agentId, id, content);
+	}
+
+	/** 删除记忆(清理不再需要的沉淀) */
+	public void deleteMemory(long agentId, long id) {
+		memoryService.delete(agentId, id);
 	}
 
 	// ---- 向量盘点(运维) ----

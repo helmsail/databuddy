@@ -20,7 +20,7 @@ import com.alibaba.cloud.ai.graph.state.StateSnapshot;
 import com.helmsail.databuddy.agent.AgentService;
 import com.helmsail.databuddy.exception.BusinessException;
 import com.helmsail.databuddy.exception.ErrorCode;
-import com.helmsail.databuddy.memory.SessionMemoryService;
+import com.helmsail.databuddy.memory.MemoryService;
 
 import lombok.extern.slf4j.Slf4j;
 import reactor.core.Disposable;
@@ -36,7 +36,7 @@ import reactor.core.scheduler.Schedulers;
  * 跑完/停止/出错/开跑前释放、挂起轮保留(唯一例外,持久于库、跨重启有效)。
  * 挂起态与恢复全部走框架检查点:getState(next 含 PLAN_REVIEW = 挂起中)+ updateState(写决定)+ stream(null) 续跑,
  * 无自有登记/超时/清扫。入口校验失败与执行期错误统一以 error 帧回传(流式客户端的唯一可达通道);
- * 记忆读写都在图外:进图前 buildContext 注入 HISTORY,跑完 finishTurn 写回
+ * 记忆读写都在图外:进图前注入 HISTORY(会话记忆)与 AGENT_MEMORY(agent 沉淀清单),跑完 addTurn 写回;agent 沉淀由节点侧工具自管
  */
 @Slf4j
 @Service
@@ -44,7 +44,7 @@ public class GraphService {
 
 	private final CompiledGraph graph;
 
-	private final SessionMemoryService sessionMemory;
+	private final MemoryService memory;
 
 	private final AgentService agentService;
 
@@ -54,10 +54,10 @@ public class GraphService {
 	/** 运行表:threadId → 现场;同会话至多一个(新消息先停旧现场);停止/断连兜底靠它 */
 	private final Map<String, GraphRun> runningRuns = new ConcurrentHashMap<>();
 
-	public GraphService(CompiledGraph graph, SessionMemoryService sessionMemory, AgentService agentService,
+	public GraphService(CompiledGraph graph, MemoryService memory, AgentService agentService,
 			BaseCheckpointSaver checkpointSaver) {
 		this.graph = graph;
-		this.sessionMemory = sessionMemory;
+		this.memory = memory;
 		this.agentService = agentService;
 		this.checkpointSaver = checkpointSaver;
 	}
@@ -125,9 +125,10 @@ public class GraphService {
 		}
 		agentService.get(run.getAgentId()); // 入口校验:agent 不存在 → 错误帧,不进图
 		release(run.getThreadId()); // 开跑前释放旧检查点(框架语义要求:防上轮未确认的挂起状态与新轮混写)
-		String history = sessionMemory.buildContext(run.getThreadId());
+		MemoryService.MemoryTexts texts = memory.buildContext(run.getAgentId(), run.getThreadId());
 		Map<String, Object> init = Map.of(GraphKeys.INPUT, run.getInput(), GraphKeys.AGENT_ID, run.getAgentId(),
-				GraphKeys.HISTORY, history, GraphKeys.PLAN_REVIEW_ENABLED, planReview);
+				GraphKeys.HISTORY, texts.history(), GraphKeys.AGENT_MEMORY, texts.agentMemo(),
+				GraphKeys.PLAN_REVIEW_ENABLED, planReview);
 		Flux<NodeOutput> outputs = graph.stream(init, RunnableConfig.builder().threadId(run.getThreadId()).build());
 		Disposable disposable = outputs.subscribeOn(Schedulers.boundedElastic())
 			.subscribe(output -> onOutput(run, output), error -> onError(run, error), () -> onComplete(run));
@@ -199,8 +200,9 @@ public class GraphService {
 		}
 		agentService.get(agentId); // 入口校验:agent 不存在 → 业务异常(工具层转错误文本)
 		String threadId = UUID.randomUUID().toString();
-		Map<String, Object> init = Map.of(GraphKeys.INPUT, question, GraphKeys.AGENT_ID, agentId, GraphKeys.HISTORY, "",
-				GraphKeys.NL2SQL_MODE, true);
+		MemoryService.MemoryTexts texts = memory.buildContext(agentId, null); // 轻档流无会话:会话段为 "(无)"
+		Map<String, Object> init = Map.of(GraphKeys.INPUT, question, GraphKeys.AGENT_ID, agentId, GraphKeys.HISTORY,
+				texts.history(), GraphKeys.AGENT_MEMORY, texts.agentMemo(), GraphKeys.NL2SQL_MODE, true);
 		try {
 			return Mono
 				.fromCallable(() -> graph.invoke(init, RunnableConfig.builder().threadId(threadId).build())
@@ -273,7 +275,7 @@ public class GraphService {
 		emit(run, GraphSseChunk.builder().eventType(GraphKeys.DONE).build());
 		run.getSink().tryEmitComplete();
 		// done 已送出:慢活(必要时的 AI 压缩)在这一步,不挡用户
-		sessionMemory.finishTurn(run.getThreadId(), run.getInput(), answer);
+		memory.addTurn(run.getThreadId(), run.getInput(), answer);
 	}
 
 	/**
@@ -305,7 +307,7 @@ public class GraphService {
 		emit(run, GraphSseChunk.builder().eventType(GraphKeys.DONE).build());
 		run.getSink().tryEmitComplete();
 		// 记忆:用户看到了什么就记什么(计划摘要入上文,确认后下一轮不困惑)
-		sessionMemory.finishTurn(run.getThreadId(), run.getInput(), "【待确认的执行计划】\n" + planJson);
+		memory.addTurn(run.getThreadId(), run.getInput(), "【待确认的执行计划】\n" + planJson);
 		return true;
 	}
 
@@ -334,7 +336,7 @@ public class GraphService {
 
 	/** 清某会话下的记忆(客户端"删会话"编排调用;只清自己的记忆,本服务不解释键含义) */
 	public void clearMemory(String sessionId) {
-		sessionMemory.deleteConversation(sessionId);
+		memory.deleteBySession(sessionId);
 	}
 
 	/** 入口失败:统一以 error 帧+收束回传(EventSource 读不到 HTTP 信封,流内 error 是唯一可达通道) */

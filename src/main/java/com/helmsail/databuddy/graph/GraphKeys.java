@@ -89,6 +89,9 @@ public final class GraphKeys {
 	/** 上文(进图前由记忆构建注入) */
 	public static final String HISTORY = "history";
 
+	/** 智能体沉淀记忆清单(进图前构建注入;每行"序号. [id=主键] 内容";无记忆为"(无)") */
+	public static final String AGENT_MEMORY = "agent_memory";
+
 	/** 最终回复(END 输出的全量状态中提取) */
 	public static final String FINAL_ANSWER = "final_answer";
 

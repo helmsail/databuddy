@@ -18,6 +18,7 @@ import com.helmsail.databuddy.graph.plan.Plan;
 import com.helmsail.databuddy.graph.plan.PlanStep;
 import com.helmsail.databuddy.graph.plan.PlanUtils;
 import com.helmsail.databuddy.graph.util.NodeUtils;
+import com.helmsail.databuddy.memory.AgentMemoryTools;
 import com.helmsail.databuddy.prompt.NodePromptTemplateMapper;
 
 import lombok.extern.slf4j.Slf4j;
@@ -40,11 +41,15 @@ public class ReportGeneratorNode implements AsyncNodeAction {
 
 	private final ObjectMapper objectMapper;
 
+	/** 记忆工具:分析收尾时沉淀稳定口径 / 规则(不含本次数据结论) */
+	private final AgentMemoryTools agentMemoryTools;
+
 	public ReportGeneratorNode(NodePromptTemplateMapper promptMapper, AiModelServiceFactory aiModelServiceFactory,
-			ObjectMapper objectMapper) {
+			ObjectMapper objectMapper, AgentMemoryTools agentMemoryTools) {
 		this.promptMapper = promptMapper;
 		this.aiModelServiceFactory = aiModelServiceFactory;
 		this.objectMapper = objectMapper;
+		this.agentMemoryTools = agentMemoryTools;
 	}
 
 	@Override
@@ -52,9 +57,17 @@ public class ReportGeneratorNode implements AsyncNodeAction {
 	public CompletableFuture<Map<String, Object>> apply(OverAllState state) {
 		String canonical = state.value(GraphKeys.CANONICAL_QUERY, String.class)
 			.orElse(state.value(GraphKeys.INPUT, String.class).orElse(""));
-		String user = NodeUtils.renderPrompt(promptMapper, GraphKeys.REPORT_GENERATOR,
-				Map.of("canonical_query", canonical, "plan_summary", planSummary(state), "results", resultsText(state)));
-		String report = aiModelServiceFactory.getChatClient().prompt().user(user).call().content();
+		String memory = state.value(GraphKeys.AGENT_MEMORY, String.class).orElse("(无)");
+		String user = NodeUtils.renderPrompt(promptMapper, GraphKeys.REPORT_GENERATOR, Map.of("canonical_query", canonical,
+				"plan_summary", planSummary(state), "results", resultsText(state), "agent_memory", memory));
+		long agentId = NodeUtils.longOf(state, GraphKeys.AGENT_ID);
+		String report = aiModelServiceFactory.getChatClient()
+			.prompt()
+			.user(user)
+			.tools(agentMemoryTools)
+			.toolContext(Map.of(AgentMemoryTools.AGENT_ID_KEY, agentId))
+			.call()
+			.content();
 		log.info("报告生成完成: {} 字符", report == null ? 0 : report.length());
 		return CompletableFuture.completedFuture(Map.of(GraphKeys.FINAL_ANSWER, report, GraphKeys.NODE_STATUS,
 				"报告生成完成"));
