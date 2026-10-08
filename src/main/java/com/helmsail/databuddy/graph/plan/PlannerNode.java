@@ -21,7 +21,7 @@ import com.helmsail.databuddy.prompt.NodePromptTemplateMapper;
 import lombok.extern.slf4j.Slf4j;
 
 /**
- * 规划节点:数据链第六节点。把规范查询转成"可执行的分步计划"(只含 SQL / Python 两类步骤,
+ * 规划节点:数据链第六节点。把主查询转成"可执行的分步计划"(只含 SQL / Python 两类步骤,
  * 报告固定收尾不进计划),写 PLAN_JSON 与步号起点;重写场景(校验不过/人工否决/执行组超限升级)
  * 读 PLAN_REPAIR_REASON 注入提示词,并把上一版计划一并交给模型参考。
  * 计划的结构校验不在本节点(统一在枢纽第一步前做一次);阻塞的 LLM 调用发生在
@@ -51,7 +51,7 @@ public class PlannerNode implements AsyncNodeAction {
 		if (Boolean.TRUE.equals(state.value(GraphKeys.NL2SQL_ENABLED, false))) {
 			return CompletableFuture.completedFuture(lightPlan(state));
 		}
-		String canonical = state.value(GraphKeys.CANONICAL_QUERY, String.class)
+		String canonical = state.value(GraphKeys.MAIN_QUERY, String.class)
 			.orElse(state.value(GraphKeys.INPUT, String.class).orElse(""));
 		String schema = state.value(GraphKeys.SCHEMA, String.class).orElse("无");
 		String knowledge = state.value(GraphKeys.KNOWLEDGE, String.class).orElse("无");
@@ -68,9 +68,9 @@ public class PlannerNode implements AsyncNodeAction {
 				GraphKeys.PROGRESS, note(planJson)));
 	}
 
-	/** 轻档固定计划:单步 SQL 生成,指令用规范查询(参考写死"SQL生成",这里用真实问题描述);不调 LLM */
+	/** 轻档固定计划:单步 SQL 生成,指令用主查询(参考写死"SQL生成",这里用真实问题描述);不调 LLM */
 	private Map<String, Object> lightPlan(OverAllState state) {
-		String canonical = state.value(GraphKeys.CANONICAL_QUERY, String.class)
+		String canonical = state.value(GraphKeys.MAIN_QUERY, String.class)
 			.orElse(state.value(GraphKeys.INPUT, String.class).orElse(""));
 		PlanStep step = new PlanStep();
 		step.setStep(1);

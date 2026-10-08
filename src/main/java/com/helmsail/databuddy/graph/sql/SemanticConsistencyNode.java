@@ -61,7 +61,7 @@ public class SemanticConsistencyNode implements AsyncNodeAction {
 		AgentService.DatabaseTarget target = agentService.databaseTargetOf(agentId,
 				NodeUtils.stringList(state, GraphKeys.RECALLED_TABLES));
 		String dialect = target == null ? "MySQL" : target.dialect();
-		String canonical = state.value(GraphKeys.CANONICAL_QUERY, String.class)
+		String canonical = state.value(GraphKeys.MAIN_QUERY, String.class)
 			.orElse(state.value(GraphKeys.INPUT, String.class).orElse(""));
 		String user = NodeUtils.renderPrompt(promptMapper, GraphKeys.SEMANTIC_CONSISTENCY,
 				Map.of("dialect", dialect, "instruction", currentInstruction(state), "sql", sql, "schema",

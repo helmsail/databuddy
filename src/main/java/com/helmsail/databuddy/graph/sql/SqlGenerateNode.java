@@ -75,7 +75,7 @@ public class SqlGenerateNode implements AsyncNodeAction {
 					"无法定位分析目标库(智能体未绑定数据表,或数据表跨多个库无法判定),本轮分析无法继续。", GraphKeys.PROGRESS,
 					"SQL 生成终止:无法定位目标库"));
 		}
-		String canonical = state.value(GraphKeys.CANONICAL_QUERY, String.class)
+		String canonical = state.value(GraphKeys.MAIN_QUERY, String.class)
 			.orElse(state.value(GraphKeys.INPUT, String.class).orElse(""));
 		String schema = state.value(GraphKeys.SCHEMA, String.class).orElse("无");
 		String knowledge = state.value(GraphKeys.KNOWLEDGE, String.class).orElse("无");

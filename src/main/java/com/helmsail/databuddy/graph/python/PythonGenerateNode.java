@@ -51,7 +51,7 @@ public class PythonGenerateNode implements AsyncNodeAction {
 	@Observed(name = "node.pythonGenerate", contextualName = "Python 生成")
 	public CompletableFuture<Map<String, Object>> apply(OverAllState state) {
 		int attempt = NodeUtils.intOf(state, PythonKeys.PYTHON_ATTEMPT, 0) + 1;
-		String canonical = state.value(GraphKeys.CANONICAL_QUERY, String.class)
+		String canonical = state.value(GraphKeys.MAIN_QUERY, String.class)
 			.orElse(state.value(GraphKeys.INPUT, String.class).orElse(""));
 		String user = NodeUtils.renderPrompt(promptMapper, GraphKeys.PYTHON_GENERATE,
 				Map.of("schema", state.value(GraphKeys.SCHEMA, String.class).orElse("无"), "canonical_query", canonical,

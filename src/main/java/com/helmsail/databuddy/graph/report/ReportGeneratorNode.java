@@ -55,7 +55,7 @@ public class ReportGeneratorNode implements AsyncNodeAction {
 	@Override
 	@Observed(name = "node.reportGenerator", contextualName = "报告生成")
 	public CompletableFuture<Map<String, Object>> apply(OverAllState state) {
-		String canonical = state.value(GraphKeys.CANONICAL_QUERY, String.class)
+		String canonical = state.value(GraphKeys.MAIN_QUERY, String.class)
 			.orElse(state.value(GraphKeys.INPUT, String.class).orElse(""));
 		String memory = state.value(GraphKeys.AGENT_MEMORY, String.class).orElse("(无)");
 		String user = NodeUtils.renderPrompt(promptMapper, GraphKeys.REPORT_GENERATOR, Map.of("canonical_query", canonical,

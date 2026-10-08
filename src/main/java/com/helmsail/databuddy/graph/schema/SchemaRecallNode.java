@@ -21,7 +21,7 @@ import com.helmsail.databuddy.vectorize.KnowledgeType;
 import lombok.extern.slf4j.Slf4j;
 
 /**
- * Schema 召回节点:数据链第三节点。用规范查询 + 扩展问法多路向量召回 agent 绑定的表块(按表名去重,块自足),
+ * Schema 召回节点:数据链第三节点。用主查询 + 备用查询多路向量召回 agent 绑定的表块(按表名去重,块自足),
  * 拼接为 SCHEMA 文本、解析出表名写 RECALLED_TABLES;纯检索,不调 LLM。
  * 未命中:写终止语到 FINAL_ANSWER(经既有 END 机制播报给用户)与过程状态,流程收束;
  * 阻塞的检索调用发生在图订阅线程(boundedElastic)上,不占事件循环
@@ -46,7 +46,7 @@ public class SchemaRecallNode implements AsyncNodeAction {
 	@Override
 	@Observed(name = "node.schemaRecall", contextualName = "Schema 召回")
 	public CompletableFuture<Map<String, Object>> apply(OverAllState state) {
-		String canonical = state.value(GraphKeys.CANONICAL_QUERY, String.class)
+		String canonical = state.value(GraphKeys.MAIN_QUERY, String.class)
 			.orElse(state.value(GraphKeys.INPUT, String.class).orElse(""));
 		long agentId = NodeUtils.longOf(state, GraphKeys.AGENT_ID);
 		List<String> queryList = queries(state, canonical);
@@ -62,11 +62,11 @@ public class SchemaRecallNode implements AsyncNodeAction {
 				GraphKeys.PROGRESS, note(tables.size(), names)));
 	}
 
-	/** 检索查询组:规范查询 + 扩展问法(去重,规范查询优先;无扩展时单路) */
+	/** 检索查询组:主查询 + 备用查询(去重,主查询优先;无备用时单路) */
 	private List<String> queries(OverAllState state, String canonical) {
 		List<String> queries = new ArrayList<>();
 		queries.add(canonical);
-		for (String expanded : NodeUtils.stringList(state, GraphKeys.EXPANDED_QUERIES)) {
+		for (String expanded : NodeUtils.stringList(state, GraphKeys.BACKUP_QUERIES)) {
 			if (!queries.contains(expanded)) {
 				queries.add(expanded);
 			}

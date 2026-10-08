@@ -24,9 +24,9 @@ import com.helmsail.databuddy.prompt.NodePromptTemplateMapper;
 import lombok.extern.slf4j.Slf4j;
 
 /**
- * 查询增强节点:用召回的知识把业务语言翻译成数据语言——产出规范查询(指代消解、相对时间换算为
- * 绝对时间、业务术语解析成数据语言)与 2-3 条扩展问法,写 CANONICAL_QUERY / EXPANDED_QUERIES 供下游使用。
- * 调用或输出失败(异常/不可解析/规范查询为空)回退原问题(扩展为空)——增强是质量步,不因它整轮失败;
+ * 查询增强节点:用召回的知识把业务语言翻译成数据语言——产出主查询(指代消解、相对时间换算为
+ * 绝对时间、业务术语解析成数据语言)与 2-3 条备用查询,写 MAIN_QUERY / BACKUP_QUERIES 供下游使用。
+ * 调用或输出失败(异常/不可解析/主查询为空)回退原问题(备用为空)——增强是质量步,不因它整轮失败;
  * 阻塞的 LLM 调用发生在图订阅线程(boundedElastic)上,不占事件循环
  */
 @Slf4j
@@ -60,7 +60,7 @@ public class QueryEnhanceNode implements AsyncNodeAction {
 		return CompletableFuture.completedFuture(parse(input, user));
 	}
 
-	/** 调用与解析;调用或解析失败 / 规范查询为空 → 回退原问题(扩展为空),如实记过程状态 */
+	/** 调用与解析;调用或解析失败 / 主查询为空 → 回退原问题(备用为空),如实记过程状态 */
 	private Map<String, Object> parse(String input, String user) {
 		try {
 			String output = aiModelServiceFactory.getChatClient().prompt().user(user).call().content();
@@ -68,16 +68,16 @@ public class QueryEnhanceNode implements AsyncNodeAction {
 			String canonical = root.path("canonical_query").asText("");
 			if (StringUtils.hasText(canonical)) {
 				List<String> expanded = strings(root.path("expanded_queries"));
-				log.info("查询增强: 规范查询=\"{}\", 扩展 {} 条", canonical, expanded.size());
-				return Map.of(GraphKeys.CANONICAL_QUERY, canonical, GraphKeys.EXPANDED_QUERIES, expanded,
-						GraphKeys.PROGRESS, "查询增强完成:扩展 " + expanded.size() + " 条");
+				log.info("查询增强: 主查询=\"{}\", 备用查询 {} 条", canonical, expanded.size());
+				return Map.of(GraphKeys.MAIN_QUERY, canonical, GraphKeys.BACKUP_QUERIES, expanded,
+						GraphKeys.PROGRESS, "查询增强完成:备用查询 " + expanded.size() + " 条");
 			}
-			log.warn("查询增强规范查询为空,回退原问题: {}", NodeUtils.brief(output));
+			log.warn("查询增强未产出有效查询,回退原问题: {}", NodeUtils.brief(output));
 		}
 		catch (RuntimeException e) {
 			log.warn("查询增强调用或输出不可解析,回退原问题: {}", e.getMessage());
 		}
-		return Map.of(GraphKeys.CANONICAL_QUERY, input, GraphKeys.EXPANDED_QUERIES, List.of(), GraphKeys.PROGRESS,
+		return Map.of(GraphKeys.MAIN_QUERY, input, GraphKeys.BACKUP_QUERIES, List.of(), GraphKeys.PROGRESS,
 				"查询增强回退:沿用原问题");
 	}
 

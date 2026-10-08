@@ -99,11 +99,11 @@ public final class GraphKeys {
 	/** 业务语义文本:智能体记忆(口径/规则/偏好)+ 召回知识(术语/问答/文档,带来源标注;两段皆空为"无") */
 	public static final String KNOWLEDGE = "knowledge";
 
-	/** 规范查询:业务翻译后的完整查询(指代消解、绝对时间、术语已解析;回退时为原问题) */
-	public static final String CANONICAL_QUERY = "canonical_query";
+	/** 主查询:业务翻译后的完整查询(指代消解、绝对时间、术语已解析;回退时为原问题) */
+	public static final String MAIN_QUERY = "main_query";
 
-	/** 扩展问法列表(查询增强产出;Schema 召回据此多路检索;回退时为空表) */
-	public static final String EXPANDED_QUERIES = "expanded_queries";
+	/** 备用查询列表(查询增强产出;仅 Schema 召回在主路不足时补探多路;回退时为空表) */
+	public static final String BACKUP_QUERIES = "backup_queries";
 
 	/** 召回的表结构文本(表块内容拼接;未命中为"无") */
 	public static final String SCHEMA = "schema";

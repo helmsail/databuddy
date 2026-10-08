@@ -20,7 +20,7 @@ import com.helmsail.databuddy.prompt.NodePromptTemplateMapper;
 import lombok.extern.slf4j.Slf4j;
 
 /**
- * 可行性评估节点:数据链第五节点。进下游前的"材料体检"——用规范查询 + 召回材料(表结构/表关系/业务知识)
+ * 可行性评估节点:数据链第五节点。进下游前的"材料体检"——用主查询 + 召回材料(表结构/表关系/业务知识)
  * + 对话历史,让 LLM 判定"就凭现有材料,这个分析做得出来吗",二分类:
  * 可分析(data_analysis)→ 放行;需要澄清(need_clarification)→ 反问写 FINAL_ANSWER,经既有 END 机制收束播报。
  * 定位是乐观的体检而非硬闸门:调用或解析失败时按可分析放行(退化为"没有本节点"之行,不阻塞用户);
@@ -51,7 +51,7 @@ public class FeasibilityAssessmentNode implements AsyncNodeAction {
 	@Override
 	@Observed(name = "node.feasibilityAssessment", contextualName = "可行性评估")
 	public CompletableFuture<Map<String, Object>> apply(OverAllState state) {
-		String canonical = state.value(GraphKeys.CANONICAL_QUERY, String.class)
+		String canonical = state.value(GraphKeys.MAIN_QUERY, String.class)
 			.orElse(state.value(GraphKeys.INPUT, String.class).orElse(""));
 		String schema = state.value(GraphKeys.SCHEMA, String.class).orElse("无");
 		String relations = state.value(GraphKeys.TABLE_RELATIONS, String.class).orElse("无");

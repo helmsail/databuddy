@@ -42,7 +42,7 @@ public class PythonAnalyzeNode implements AsyncNodeAction {
 	@Override
 	@Observed(name = "node.pythonAnalyze", contextualName = "Python 分析")
 	public CompletableFuture<Map<String, Object>> apply(OverAllState state) {
-		String canonical = state.value(GraphKeys.CANONICAL_QUERY, String.class)
+		String canonical = state.value(GraphKeys.MAIN_QUERY, String.class)
 			.orElse(state.value(GraphKeys.INPUT, String.class).orElse(""));
 		String pythonOutput = state.value(PythonKeys.PYTHON_RESULT, String.class).orElse("(无输出)");
 		String user = NodeUtils.renderPrompt(promptMapper, GraphKeys.PYTHON_ANALYZE,
