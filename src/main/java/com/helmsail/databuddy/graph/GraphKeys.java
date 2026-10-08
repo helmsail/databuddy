@@ -96,7 +96,7 @@ public final class GraphKeys {
 	/** 最终回复(END 输出的全量状态中提取) */
 	public static final String FINAL_ANSWER = "final_answer";
 
-	/** 召回的业务知识文本(术语/问答/文档,带来源标注;无命中为"无") */
+	/** 业务语义文本:智能体记忆(口径/规则/偏好)+ 召回知识(术语/问答/文档,带来源标注;两段皆空为"无") */
 	public static final String KNOWLEDGE = "knowledge";
 
 	/** 规范查询:业务翻译后的完整查询(指代消解、绝对时间、术语已解析;回退时为原问题) */

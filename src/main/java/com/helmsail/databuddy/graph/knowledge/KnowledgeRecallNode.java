@@ -27,7 +27,8 @@ import lombok.extern.slf4j.Slf4j;
 /**
  * 业务知识召回节点:数据链首节点(意图识别分流的 data_analysis 去向)。
  * 先把问题结合对话历史重写成可独立理解的查询,再向量召回知识源(术语/问答/文档;
- * 表块留给后续 Schema 召回节点),格式化为带来源标注的知识文本写入 KNOWLEDGE;无命中为"无",不阻塞下游。
+ * 表块留给后续 Schema 召回节点),并把智能体记忆(口径/规则/偏好)并入,汇成"业务语义总集"写入 KNOWLEDGE;
+ * 两段皆空为"无",不阻塞下游。
  * 重写调用或输出失败(异常/不可解析/为空)回退原问题检索——知识召回是增强步,不因它整轮失败;
  * 阻塞的 LLM 与检索调用发生在图订阅线程(boundedElastic)上,不占事件循环
  */
@@ -63,6 +64,7 @@ public class KnowledgeRecallNode implements AsyncNodeAction {
 	public CompletableFuture<Map<String, Object>> apply(OverAllState state) {
 		String input = state.value(GraphKeys.INPUT, String.class).orElse("");
 		String history = state.value(GraphKeys.SESSION_MEMORY, String.class).orElse("(无)");
+		String memory = state.value(GraphKeys.AGENT_MEMORY, String.class).orElse("(无)");
 		long agentId = NodeUtils.longOf(state, GraphKeys.AGENT_ID);
 		String query = rewrite(input, history);
 		List<RetrievedChunk> hits = new ArrayList<>();
@@ -70,7 +72,7 @@ public class KnowledgeRecallNode implements AsyncNodeAction {
 			hits.addAll(agentService.retrieve(agentId, query, TOP_K, type));
 		}
 		log.info("知识召回: agent={}, 重写查询=\"{}\", 命中 {} 条", agentId, query, hits.size());
-		return CompletableFuture.completedFuture(Map.of(GraphKeys.KNOWLEDGE, format(hits), GraphKeys.PROGRESS,
+		return CompletableFuture.completedFuture(Map.of(GraphKeys.KNOWLEDGE, collect(hits, memory), GraphKeys.PROGRESS,
 				hits.isEmpty() ? "知识召回完成:未命中相关知识" : "知识召回完成:命中 " + hits.size() + " 条"));
 	}
 
@@ -91,6 +93,16 @@ public class KnowledgeRecallNode implements AsyncNodeAction {
 			log.warn("重写调用或输出不可解析,回退原问题检索: {}", e.getMessage());
 		}
 		return input;
+	}
+
+	/** 业务语义总集:有记忆先给记忆段(口径 / 规则 / 偏好,置于前优先参考),其后拼召回知识;两段皆空为"无" */
+	private String collect(List<RetrievedChunk> hits, String memory) {
+		String knowledge = format(hits);
+		if (!StringUtils.hasText(memory) || "(无)".equals(memory)) {
+			return knowledge;
+		}
+		String section = "【智能体记忆(此前沉淀的口径 / 规则 / 偏好)】\n" + memory;
+		return "无".equals(knowledge) ? section : section + "\n\n" + knowledge;
 	}
 
 	/** 命中块 → 带知识类型标注的知识文本(编号列出;回源字段随条目补注) */
