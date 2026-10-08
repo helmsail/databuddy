@@ -1,7 +1,8 @@
 package com.helmsail.databuddy.graph;
 
 /**
- * 图常量唯一登记:SSE 帧类型、节点 ID、状态键与节点取值
+ * 图常量唯一登记:SSE 帧类型、节点 ID 与跨域状态键
+ * (域内自洽的状态键见子包 IntentKeys / PythonKeys / SqlKeys)
  */
 public final class GraphKeys {
 
@@ -95,9 +96,6 @@ public final class GraphKeys {
 	/** 最终回复(END 输出的全量状态中提取) */
 	public static final String FINAL_ANSWER = "final_answer";
 
-	/** 意图分类结果:data_analysis / chat(意图识别产出;IntentRecognitionDispatcher 据此分流) */
-	public static final String CLASSIFICATION = "classification";
-
 	/** 召回的业务知识文本(术语/问答/文档,带来源标注;无命中为"无") */
 	public static final String KNOWLEDGE = "knowledge";
 
@@ -116,8 +114,8 @@ public final class GraphKeys {
 	/** 表关系清单文本(join 条件,每行一条;无关系为"无") */
 	public static final String TABLE_RELATIONS = "table_relations";
 
-	/** 节点过程状态:人类可读一句话,由 GraphService 转成 step 帧(不写则不播) */
-	public static final String NODE_STATUS = "node_status";
+	/** 过程播报文本(所有节点共用:每个节点完成时写一句人话,同键覆盖;GraphService 在每条节点输出时读它转 step 帧,不写则不播) */
+	public static final String PROGRESS = "progress";
 
 	/** 执行计划 JSON(规划节点产出;提示词契约见 planner 种子) */
 	public static final String PLAN_JSON = "plan_json";
@@ -149,46 +147,11 @@ public final class GraphKeys {
 	/** 当前生成的 SQL 文本(SQL 生成节点写;执行节点读) */
 	public static final String SQL_QUERY = "sql_query";
 
-	/** SQL 组尝试计数(生成即 +1;执行成功清零;超限触发升级) */
-	public static final String SQL_ATTEMPT = "sql_attempt";
-
-	/** SQL 组去向标记(组内节点写,分流器读):semantic / regenerate / replan / end / hub */
-	public static final String SQL_NEXT = "sql_next";
-
-	/** SQL 打回原因(语义不过 / 执行失败;生成成功时清空) */
-	public static final String SQL_REPAIR_REASON = "sql_repair_reason";
-
 	/** 最近一次 SQL 执行结果 JSON(执行节点写;Python 执行节点据此组装 input.json) */
 	public static final String SQL_RESULT = "sql_result";
 
-	/** 语义一致性结果(校验节点写,分流器读;未通过原因写 SQL_REPAIR_REASON 打回生成) */
-	public static final String SEMANTIC_PASSED = "semantic_passed";
-
-	/** 当前 Python 代码(生成节点写;执行节点读) */
-	public static final String PYTHON_CODE = "python_code";
-
-	/** Python 组尝试计数(生成即 +1;分析完成清零;超限触发升级) */
-	public static final String PYTHON_ATTEMPT = "python_attempt";
-
-	/** Python 组去向标记(组内节点写,分流器读):analyze / regenerate / replan / end */
-	public static final String PYTHON_NEXT = "python_next";
-
-	/** Python 失败原因(执行失败/超时/无产出;注入重写提示词) */
-	public static final String PYTHON_FAIL_REASON = "python_fail_reason";
-
-	/** Python 标准输出(stdout,约定的 JSON 结果) */
-	public static final String PYTHON_RESULT = "python_result";
-
 	/** 分步结果累积(Map<String,String>;step_N = 结果文本(SQL 结果 JSON / Python stdout 及产出清单),step_N_analysis = 分析文本) */
 	public static final String STEP_RESULTS = "step_results";
-
-	// —— 意图分类取值(意图识别节点的产出) ——
-
-	/** 数据分析请求 */
-	public static final String INTENT_DATA_ANALYSIS = "data_analysis";
-
-	/** 闲聊 */
-	public static final String INTENT_CHAT = "chat";
 
 	private GraphKeys() {
 	}

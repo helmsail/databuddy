@@ -58,7 +58,7 @@ public class PlanExecutorNode implements AsyncNodeAction {
 		// 人工确认闸:开启则先转确认节点(确认后开关被关掉,后续步不再拦)
 		if (Boolean.TRUE.equals(state.value(GraphKeys.HUMAN_REVIEW_ENABLED, false))) {
 			return CompletableFuture.completedFuture(Map.of(GraphKeys.PLAN_VALID, true, GraphKeys.PLAN_NEXT,
-					GraphKeys.PLAN_REVIEW, GraphKeys.NODE_STATUS, "计划待确认:请确认后继续执行"));
+					GraphKeys.PLAN_REVIEW, GraphKeys.PROGRESS, "计划待确认:请确认后继续执行"));
 		}
 		int size = plan.getExecutionPlan().size();
 		// 步数走完:轻档直接到终点(跳过报告,SQL 文本即结果);常规走报告固定收尾(计划里没有报告步)
@@ -66,16 +66,16 @@ public class PlanExecutorNode implements AsyncNodeAction {
 			if (Boolean.TRUE.equals(state.value(GraphKeys.NL2SQL_ENABLED, false))) {
 				log.info("轻档模式:计划执行完成(共 {} 步),直接收束", size);
 				return CompletableFuture.completedFuture(Map.of(GraphKeys.PLAN_VALID, true, GraphKeys.PLAN_NEXT,
-						StateGraph.END, GraphKeys.NODE_STATUS, "轻档完成:SQL 已生成并执行"));
+						StateGraph.END, GraphKeys.PROGRESS, "轻档完成:SQL 已生成并执行"));
 			}
 			log.info("计划执行完成: 共 {} 步,转报告生成", size);
 			return CompletableFuture.completedFuture(Map.of(GraphKeys.PLAN_VALID, true, GraphKeys.PLAN_NEXT,
-					GraphKeys.REPORT_GENERATOR, GraphKeys.NODE_STATUS, "计划执行完成:共 " + size + " 步,开始生成报告"));
+					GraphKeys.REPORT_GENERATOR, GraphKeys.PROGRESS, "计划执行完成:共 " + size + " 步,开始生成报告"));
 		}
 		PlanStep current = PlanUtils.stepAt(plan, step);
 		log.info("派活: 第 {}/{} 步 → {}", step, size, current.getToolToUse());
 		return CompletableFuture.completedFuture(Map.of(GraphKeys.PLAN_VALID, true, GraphKeys.PLAN_NEXT,
-				current.getToolToUse(), GraphKeys.NODE_STATUS,
+				current.getToolToUse(), GraphKeys.PROGRESS,
 				"计划执行:第 " + step + "/" + size + " 步(" + toolText(current.getToolToUse()) + ")"));
 	}
 
@@ -84,12 +84,12 @@ public class PlanExecutorNode implements AsyncNodeAction {
 		int count = NodeUtils.intOf(state, GraphKeys.PLAN_REPAIR_COUNT, 0) + 1;
 		if (count > PlanUtils.MAX_PLAN_REPAIR) {
 			log.error("计划重写超限({} 次),终止: {}", PlanUtils.MAX_PLAN_REPAIR, reason);
-			return Map.of(GraphKeys.PLAN_VALID, false, GraphKeys.FINAL_ANSWER, TERMINATION, GraphKeys.NODE_STATUS,
+			return Map.of(GraphKeys.PLAN_VALID, false, GraphKeys.FINAL_ANSWER, TERMINATION, GraphKeys.PROGRESS,
 					"计划校验失败且重写超限:终止");
 		}
 		log.warn("计划校验未通过(第 {} 次重写): {}", count, reason);
 		return Map.of(GraphKeys.PLAN_VALID, false, GraphKeys.PLAN_REPAIR_REASON, reason, GraphKeys.PLAN_REPAIR_COUNT,
-				count, GraphKeys.PLAN_STEP, 1, GraphKeys.NODE_STATUS, "计划校验未通过,重新规划");
+				count, GraphKeys.PLAN_STEP, 1, GraphKeys.PROGRESS, "计划校验未通过,重新规划");
 	}
 
 	/** 工具名 → 播报用中文 */

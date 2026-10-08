@@ -70,14 +70,14 @@ public class QueryEnhanceNode implements AsyncNodeAction {
 				List<String> expanded = strings(root.path("expanded_queries"));
 				log.info("查询增强: 规范查询=\"{}\", 扩展 {} 条", canonical, expanded.size());
 				return Map.of(GraphKeys.CANONICAL_QUERY, canonical, GraphKeys.EXPANDED_QUERIES, expanded,
-						GraphKeys.NODE_STATUS, "查询增强完成:扩展 " + expanded.size() + " 条");
+						GraphKeys.PROGRESS, "查询增强完成:扩展 " + expanded.size() + " 条");
 			}
 			log.warn("查询增强规范查询为空,回退原问题: {}", NodeUtils.brief(output));
 		}
 		catch (RuntimeException e) {
 			log.warn("查询增强调用或输出不可解析,回退原问题: {}", e.getMessage());
 		}
-		return Map.of(GraphKeys.CANONICAL_QUERY, input, GraphKeys.EXPANDED_QUERIES, List.of(), GraphKeys.NODE_STATUS,
+		return Map.of(GraphKeys.CANONICAL_QUERY, input, GraphKeys.EXPANDED_QUERIES, List.of(), GraphKeys.PROGRESS,
 				"查询增强回退:沿用原问题");
 	}
 

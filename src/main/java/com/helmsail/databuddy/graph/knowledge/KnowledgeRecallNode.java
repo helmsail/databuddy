@@ -70,7 +70,7 @@ public class KnowledgeRecallNode implements AsyncNodeAction {
 			hits.addAll(agentService.retrieve(agentId, query, TOP_K, type));
 		}
 		log.info("知识召回: agent={}, 重写查询=\"{}\", 命中 {} 条", agentId, query, hits.size());
-		return CompletableFuture.completedFuture(Map.of(GraphKeys.KNOWLEDGE, format(hits), GraphKeys.NODE_STATUS,
+		return CompletableFuture.completedFuture(Map.of(GraphKeys.KNOWLEDGE, format(hits), GraphKeys.PROGRESS,
 				hits.isEmpty() ? "知识召回完成:未命中相关知识" : "知识召回完成:命中 " + hits.size() + " 条"));
 	}
 

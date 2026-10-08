@@ -73,7 +73,7 @@ public class ReportGeneratorNode implements AsyncNodeAction {
 			report = "本轮未产出报告正文,可查看上方的执行过程与结果。";
 		}
 		log.info("报告生成完成: {} 字符", report.length());
-		return CompletableFuture.completedFuture(Map.of(GraphKeys.FINAL_ANSWER, report, GraphKeys.NODE_STATUS,
+		return CompletableFuture.completedFuture(Map.of(GraphKeys.FINAL_ANSWER, report, GraphKeys.PROGRESS,
 				"报告生成完成"));
 	}
 

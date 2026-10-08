@@ -213,7 +213,7 @@ public class GraphService {
 			return;
 		}
 		// 中间节点完成:过程状态 / SQL / 结果三帧(空判与去重都在现场内)
-		thread.step(output.node(), output.state().value(GraphKeys.NODE_STATUS, String.class).orElse(null));
+		thread.step(output.node(), output.state().value(GraphKeys.PROGRESS, String.class).orElse(null));
 		thread.sql(output.node(), output.state().value(GraphKeys.SQL_QUERY, String.class).orElse(null));
 		thread.result(output.node(), output.state().value(GraphKeys.SQL_RESULT, String.class).orElse(null));
 	}

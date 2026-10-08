@@ -22,7 +22,7 @@ class GraphSseEmitter {
 		this.sink = sink;
 	}
 
-	/** 过程状态帧(step;节点侧 NODE_STATUS 原文) */
+	/** 过程状态帧(step;节点侧 PROGRESS 原文) */
 	void step(String node, String text) {
 		emit(GraphSseChunk.builder().eventType(GraphKeys.STEP).node(node).text(text).build());
 	}

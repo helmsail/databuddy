@@ -11,7 +11,7 @@ public class SemanticConsistencyDispatcher implements EdgeAction {
 
 	@Override
 	public String apply(OverAllState state) {
-		boolean passed = state.value(GraphKeys.SEMANTIC_PASSED, false);
+		boolean passed = state.value(SqlKeys.SEMANTIC_PASSED, false);
 		return passed ? GraphKeys.SQL_EXECUTE : GraphKeys.SQL_GENERATE;
 	}
 

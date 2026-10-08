@@ -56,7 +56,7 @@ public class SqlGenerateNode implements AsyncNodeAction {
 	@Override
 	@Observed(name = "node.sqlGenerate", contextualName = "SQL 生成")
 	public CompletableFuture<Map<String, Object>> apply(OverAllState state) {
-		int attempt = NodeUtils.intOf(state, GraphKeys.SQL_ATTEMPT, 0) + 1;
+		int attempt = NodeUtils.intOf(state, SqlKeys.SQL_ATTEMPT, 0) + 1;
 		if (attempt > MAX_SQL_ATTEMPT) {
 			return CompletableFuture.completedFuture(replan(state, "SQL 组重试超限: " + lastReason(state)));
 		}
@@ -71,15 +71,15 @@ public class SqlGenerateNode implements AsyncNodeAction {
 		AgentService.DatabaseTarget target = agentService.databaseTargetOf(agentId,
 				NodeUtils.stringList(state, GraphKeys.RECALLED_TABLES));
 		if (target == null) {
-			return CompletableFuture.completedFuture(Map.of(GraphKeys.SQL_NEXT, "end", GraphKeys.FINAL_ANSWER,
-					"无法定位分析目标库(智能体未绑定数据表,或数据表跨多个库无法判定),本轮分析无法继续。", GraphKeys.NODE_STATUS,
+			return CompletableFuture.completedFuture(Map.of(SqlKeys.SQL_NEXT, "end", GraphKeys.FINAL_ANSWER,
+					"无法定位分析目标库(智能体未绑定数据表,或数据表跨多个库无法判定),本轮分析无法继续。", GraphKeys.PROGRESS,
 					"SQL 生成终止:无法定位目标库"));
 		}
 		String canonical = state.value(GraphKeys.CANONICAL_QUERY, String.class)
 			.orElse(state.value(GraphKeys.INPUT, String.class).orElse(""));
 		String schema = state.value(GraphKeys.SCHEMA, String.class).orElse("无");
 		String knowledge = state.value(GraphKeys.KNOWLEDGE, String.class).orElse("无");
-		String reason = state.value(GraphKeys.SQL_REPAIR_REASON, String.class).orElse("");
+		String reason = state.value(SqlKeys.SQL_REPAIR_REASON, String.class).orElse("");
 		String previousSql = state.value(GraphKeys.SQL_QUERY, String.class).orElse("");
 		String user = NodeUtils.renderPrompt(promptMapper, GraphKeys.SQL_GENERATE,
 				Map.of("dialect", target.dialect(), "schema", schema, "knowledge", knowledge, "canonical_query",
@@ -88,12 +88,12 @@ public class SqlGenerateNode implements AsyncNodeAction {
 		String sql = NodeUtils.stripFence(output).trim();
 		if (!StringUtils.hasText(sql)) {
 			log.warn("SQL 生成为空(第 {} 次尝试),重试", attempt);
-			return CompletableFuture.completedFuture(Map.of(GraphKeys.SQL_NEXT, "regenerate", GraphKeys.SQL_ATTEMPT,
-					attempt, GraphKeys.SQL_REPAIR_REASON, "生成结果为空", GraphKeys.NODE_STATUS, "SQL 生成结果为空,重试"));
+			return CompletableFuture.completedFuture(Map.of(SqlKeys.SQL_NEXT, "regenerate", SqlKeys.SQL_ATTEMPT,
+					attempt, SqlKeys.SQL_REPAIR_REASON, "生成结果为空", GraphKeys.PROGRESS, "SQL 生成结果为空,重试"));
 		}
 		log.info("SQL 生成完成(第 {} 次尝试): {}", attempt, NodeUtils.brief(sql));
-		return CompletableFuture.completedFuture(Map.of(GraphKeys.SQL_QUERY, sql, GraphKeys.SQL_NEXT, "semantic",
-				GraphKeys.SQL_ATTEMPT, attempt, GraphKeys.SQL_REPAIR_REASON, "", GraphKeys.NODE_STATUS,
+		return CompletableFuture.completedFuture(Map.of(GraphKeys.SQL_QUERY, sql, SqlKeys.SQL_NEXT, "semantic",
+				SqlKeys.SQL_ATTEMPT, attempt, SqlKeys.SQL_REPAIR_REASON, "", GraphKeys.PROGRESS,
 				"SQL 生成完成(第 " + attempt + " 次尝试)"));
 	}
 
@@ -102,12 +102,12 @@ public class SqlGenerateNode implements AsyncNodeAction {
 		int count = NodeUtils.intOf(state, GraphKeys.PLAN_REPAIR_COUNT, 0) + 1;
 		if (count > PlanUtils.MAX_PLAN_REPAIR) {
 			log.error("SQL 组升级重规划超限,终止: {}", reason);
-			return Map.of(GraphKeys.SQL_NEXT, "end", GraphKeys.FINAL_ANSWER, TERMINATION, GraphKeys.NODE_STATUS,
+			return Map.of(SqlKeys.SQL_NEXT, "end", GraphKeys.FINAL_ANSWER, TERMINATION, GraphKeys.PROGRESS,
 					"SQL 组重试超限且重规划超限:终止");
 		}
 		log.warn("SQL 组升级重规划(第 {} 次): {}", count, reason);
-		return Map.of(GraphKeys.SQL_NEXT, "replan", GraphKeys.PLAN_REPAIR_COUNT, count, GraphKeys.PLAN_REPAIR_REASON,
-				reason, GraphKeys.PLAN_STEP, 1, GraphKeys.SQL_ATTEMPT, 0, GraphKeys.NODE_STATUS, "SQL 组重试超限:升级重规划");
+		return Map.of(SqlKeys.SQL_NEXT, "replan", GraphKeys.PLAN_REPAIR_COUNT, count, GraphKeys.PLAN_REPAIR_REASON,
+				reason, GraphKeys.PLAN_STEP, 1, SqlKeys.SQL_ATTEMPT, 0, GraphKeys.PROGRESS, "SQL 组重试超限:升级重规划");
 	}
 
 	/** 读计划当前步指令(枢纽已校验过计划,这里防御性解析) */
@@ -132,7 +132,7 @@ public class SqlGenerateNode implements AsyncNodeAction {
 
 	/** 最近一次打回原因(升级路径拼进重写原因) */
 	private String lastReason(OverAllState state) {
-		String reason = state.value(GraphKeys.SQL_REPAIR_REASON, String.class).orElse("");
+		String reason = state.value(SqlKeys.SQL_REPAIR_REASON, String.class).orElse("");
 		return StringUtils.hasText(reason) ? reason : "多次尝试未成功";
 	}
 

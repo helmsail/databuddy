@@ -63,22 +63,23 @@ public class IntentRecognitionNode implements AsyncNodeAction {
 		return CompletableFuture.completedFuture(toUpdates(output));
 	}
 
-	/** 模型输出 → 状态更新:分类与过程状态必写;chat 且有回复时写最终回复 */
+	/** 模型输出 → 状态更新:分类与过程播报必写;chat 且有回复时写最终回复 */
 	private Map<String, Object> toUpdates(String output) {
 		JsonNode root = NodeUtils.parseJson(objectMapper, output);
 		String classification = root.path("classification").asText("");
-		String response = root.path("response").asText("");
-		if (GraphKeys.INTENT_CHAT.equals(classification)) {
+		IntentType type = IntentType.from(classification);
+		if (type == null) {
+			throw new IllegalStateException("意图识别输出非法(classification=" + classification + "): " + NodeUtils.brief(output));
+		}
+		if (type == IntentType.CHAT) {
+			String response = root.path("response").asText("");
 			if (!StringUtils.hasText(response)) {
 				throw new IllegalStateException("意图识别为 chat 但未产出回复: " + NodeUtils.brief(output));
 			}
-			return Map.of(GraphKeys.CLASSIFICATION, classification, GraphKeys.FINAL_ANSWER, response,
-					GraphKeys.NODE_STATUS, "意图识别完成:闲聊");
+			return Map.of(IntentKeys.CLASSIFICATION, classification, GraphKeys.FINAL_ANSWER, response,
+					GraphKeys.PROGRESS, "意图识别完成:闲聊");
 		}
-		if (GraphKeys.INTENT_DATA_ANALYSIS.equals(classification)) {
-			return Map.of(GraphKeys.CLASSIFICATION, classification, GraphKeys.NODE_STATUS, "意图识别完成:数据分析");
-		}
-		throw new IllegalStateException("意图识别输出非法(classification=" + classification + "): " + NodeUtils.brief(output));
+		return Map.of(IntentKeys.CLASSIFICATION, classification, GraphKeys.PROGRESS, "意图识别完成:数据分析");
 	}
 
 }

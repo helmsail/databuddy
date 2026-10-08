@@ -20,7 +20,7 @@ public class SqlExecuteDispatcher implements EdgeAction {
 		if (StringUtils.hasText(termination)) {
 			return END;
 		}
-		String next = state.value(GraphKeys.SQL_NEXT, "hub");
+		String next = state.value(SqlKeys.SQL_NEXT, "hub");
 		return switch (next) {
 			case "end" -> END;
 			case "hub" -> GraphKeys.PLAN_EXECUTOR;

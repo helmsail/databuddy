@@ -46,18 +46,18 @@ public class PlanReviewNode implements AsyncNodeAction {
 		if (approved) {
 			log.info("计划已确认,放行执行");
 			return CompletableFuture.completedFuture(Map.of(GraphKeys.HUMAN_REVIEW_ENABLED, false, GraphKeys.PLAN_NEXT,
-					GraphKeys.PLAN_EXECUTOR, GraphKeys.NODE_STATUS, "计划已确认:开始执行"));
+					GraphKeys.PLAN_EXECUTOR, GraphKeys.PROGRESS, "计划已确认:开始执行"));
 		}
 		int count = NodeUtils.intOf(state, GraphKeys.PLAN_REPAIR_COUNT, 0) + 1;
 		if (count > PlanUtils.MAX_PLAN_REPAIR) {
 			log.warn("计划否决超限({} 次),终止", PlanUtils.MAX_PLAN_REPAIR);
-			return CompletableFuture.completedFuture(Map.of(GraphKeys.FINAL_ANSWER, TERMINATION, GraphKeys.NODE_STATUS,
+			return CompletableFuture.completedFuture(Map.of(GraphKeys.FINAL_ANSWER, TERMINATION, GraphKeys.PROGRESS,
 					"计划被否决且超限:终止"));
 		}
 		log.info("计划被否决(第 {} 次),重新规划: {}", count, feedback);
 		return CompletableFuture.completedFuture(Map.of(GraphKeys.PLAN_REPAIR_COUNT, count, GraphKeys.PLAN_REPAIR_REASON,
 				StringUtils.hasText(feedback) ? feedback : "用户否决了计划", GraphKeys.PLAN_STEP, 1,
-				GraphKeys.HUMAN_REVIEW_ENABLED, true, GraphKeys.PLAN_NEXT, GraphKeys.PLANNER, GraphKeys.NODE_STATUS,
+				GraphKeys.HUMAN_REVIEW_ENABLED, true, GraphKeys.PLAN_NEXT, GraphKeys.PLANNER, GraphKeys.PROGRESS,
 				"计划已被否决:重新规划"));
 	}
 

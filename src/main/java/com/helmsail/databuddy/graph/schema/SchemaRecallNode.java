@@ -54,12 +54,12 @@ public class SchemaRecallNode implements AsyncNodeAction {
 		if (tables.isEmpty()) {
 			log.warn("Schema 召回未命中: agent={}, 查询=\"{}\"", agentId, canonical);
 			return CompletableFuture.completedFuture(Map.of(GraphKeys.SCHEMA, "无", GraphKeys.RECALLED_TABLES, List.of(),
-					GraphKeys.NODE_STATUS, "Schema 召回未命中:未检索到相关数据表", GraphKeys.FINAL_ANSWER, NO_TABLE_MESSAGE));
+					GraphKeys.PROGRESS, "Schema 召回未命中:未检索到相关数据表", GraphKeys.FINAL_ANSWER, NO_TABLE_MESSAGE));
 		}
 		List<String> names = names(tables);
 		log.info("Schema 召回: agent={}, {} 路查询命中 {} 张表: {}", agentId, queryList.size(), tables.size(), names);
 		return CompletableFuture.completedFuture(Map.of(GraphKeys.SCHEMA, join(tables), GraphKeys.RECALLED_TABLES, names,
-				GraphKeys.NODE_STATUS, note(tables.size(), names)));
+				GraphKeys.PROGRESS, note(tables.size(), names)));
 	}
 
 	/** 检索查询组:规范查询 + 扩展问法(去重,规范查询优先;无扩展时单路) */

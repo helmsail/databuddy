@@ -21,7 +21,7 @@ public class PythonExecuteDispatcher implements EdgeAction {
 		if (StringUtils.hasText(termination)) {
 			return END;
 		}
-		String next = state.value(GraphKeys.PYTHON_NEXT, "analyze");
+		String next = state.value(PythonKeys.PYTHON_NEXT, "analyze");
 		return switch (next) {
 			case "end" -> END;
 			case "replan" -> GraphKeys.PLANNER;

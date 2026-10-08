@@ -44,7 +44,7 @@ public class PythonAnalyzeNode implements AsyncNodeAction {
 	public CompletableFuture<Map<String, Object>> apply(OverAllState state) {
 		String canonical = state.value(GraphKeys.CANONICAL_QUERY, String.class)
 			.orElse(state.value(GraphKeys.INPUT, String.class).orElse(""));
-		String pythonOutput = state.value(GraphKeys.PYTHON_RESULT, String.class).orElse("(无输出)");
+		String pythonOutput = state.value(PythonKeys.PYTHON_RESULT, String.class).orElse("(无输出)");
 		String user = NodeUtils.renderPrompt(promptMapper, GraphKeys.PYTHON_ANALYZE,
 				Map.of("canonical_query", canonical, "python_output", pythonOutput));
 		String analysis = aiModelServiceFactory.getChatClient().prompt().user(user).call().content();
@@ -56,7 +56,7 @@ public class PythonAnalyzeNode implements AsyncNodeAction {
 		Map<String, String> results = PlanUtils.withEntry(stepResults(state), "step_" + step + "_analysis", analysis);
 		log.info("Python 分析完成: 第 {} 步", step);
 		return CompletableFuture.completedFuture(Map.of(GraphKeys.STEP_RESULTS, results, GraphKeys.PLAN_STEP, step + 1,
-				GraphKeys.PYTHON_ATTEMPT, 0, GraphKeys.NODE_STATUS, "Python 分析完成"));
+				PythonKeys.PYTHON_ATTEMPT, 0, GraphKeys.PROGRESS, "Python 分析完成"));
 	}
 
 	/** 分步结果累积(整表回写:REPLACE 键语义) */

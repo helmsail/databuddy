@@ -20,6 +20,7 @@ import com.alibaba.cloud.ai.graph.exception.GraphStateException;
 import com.helmsail.databuddy.graph.enhance.QueryEnhanceNode;
 import com.helmsail.databuddy.graph.feasibility.FeasibilityAssessmentDispatcher;
 import com.helmsail.databuddy.graph.feasibility.FeasibilityAssessmentNode;
+import com.helmsail.databuddy.graph.intent.IntentKeys;
 import com.helmsail.databuddy.graph.intent.IntentRecognitionDispatcher;
 import com.helmsail.databuddy.graph.intent.IntentRecognitionNode;
 import com.helmsail.databuddy.graph.knowledge.KnowledgeRecallNode;
@@ -30,6 +31,7 @@ import com.helmsail.databuddy.graph.python.PythonAnalyzeNode;
 import com.helmsail.databuddy.graph.python.PythonExecuteDispatcher;
 import com.helmsail.databuddy.graph.python.PythonExecuteNode;
 import com.helmsail.databuddy.graph.python.PythonGenerateNode;
+import com.helmsail.databuddy.graph.python.PythonKeys;
 import com.helmsail.databuddy.graph.relation.TableRelationNode;
 import com.helmsail.databuddy.graph.report.ReportGeneratorNode;
 import com.helmsail.databuddy.graph.review.PlanReviewDispatcher;
@@ -42,6 +44,7 @@ import com.helmsail.databuddy.graph.sql.SqlExecuteDispatcher;
 import com.helmsail.databuddy.graph.sql.SqlExecuteNode;
 import com.helmsail.databuddy.graph.sql.SqlGenerateDispatcher;
 import com.helmsail.databuddy.graph.sql.SqlGenerateNode;
+import com.helmsail.databuddy.graph.sql.SqlKeys;
 
 import static com.alibaba.cloud.ai.graph.StateGraph.END;
 import static com.alibaba.cloud.ai.graph.StateGraph.START;
@@ -79,14 +82,14 @@ public class GraphConfig {
 				Map.entry(GraphKeys.SESSION_MEMORY, KeyStrategy.REPLACE),
 				Map.entry(GraphKeys.AGENT_MEMORY, KeyStrategy.REPLACE),
 				Map.entry(GraphKeys.FINAL_ANSWER, KeyStrategy.REPLACE),
-				Map.entry(GraphKeys.CLASSIFICATION, KeyStrategy.REPLACE),
+				Map.entry(IntentKeys.CLASSIFICATION, KeyStrategy.REPLACE),
 				Map.entry(GraphKeys.KNOWLEDGE, KeyStrategy.REPLACE),
 				Map.entry(GraphKeys.CANONICAL_QUERY, KeyStrategy.REPLACE),
 				Map.entry(GraphKeys.EXPANDED_QUERIES, KeyStrategy.REPLACE),
 				Map.entry(GraphKeys.SCHEMA, KeyStrategy.REPLACE),
 				Map.entry(GraphKeys.RECALLED_TABLES, KeyStrategy.REPLACE),
 				Map.entry(GraphKeys.TABLE_RELATIONS, KeyStrategy.REPLACE),
-				Map.entry(GraphKeys.NODE_STATUS, KeyStrategy.REPLACE),
+				Map.entry(GraphKeys.PROGRESS, KeyStrategy.REPLACE),
 				Map.entry(GraphKeys.PLAN_JSON, KeyStrategy.REPLACE),
 				Map.entry(GraphKeys.PLAN_STEP, KeyStrategy.REPLACE),
 				Map.entry(GraphKeys.HUMAN_REVIEW_ENABLED, KeyStrategy.REPLACE),
@@ -97,16 +100,16 @@ public class GraphConfig {
 				Map.entry(GraphKeys.PLAN_NEXT, KeyStrategy.REPLACE),
 				Map.entry(GraphKeys.NL2SQL_ENABLED, KeyStrategy.REPLACE),
 				Map.entry(GraphKeys.SQL_QUERY, KeyStrategy.REPLACE),
-				Map.entry(GraphKeys.SQL_ATTEMPT, KeyStrategy.REPLACE),
-				Map.entry(GraphKeys.SQL_NEXT, KeyStrategy.REPLACE),
-				Map.entry(GraphKeys.SQL_REPAIR_REASON, KeyStrategy.REPLACE),
+				Map.entry(SqlKeys.SQL_ATTEMPT, KeyStrategy.REPLACE),
+				Map.entry(SqlKeys.SQL_NEXT, KeyStrategy.REPLACE),
+				Map.entry(SqlKeys.SQL_REPAIR_REASON, KeyStrategy.REPLACE),
 				Map.entry(GraphKeys.SQL_RESULT, KeyStrategy.REPLACE),
-				Map.entry(GraphKeys.SEMANTIC_PASSED, KeyStrategy.REPLACE),
-				Map.entry(GraphKeys.PYTHON_CODE, KeyStrategy.REPLACE),
-				Map.entry(GraphKeys.PYTHON_ATTEMPT, KeyStrategy.REPLACE),
-				Map.entry(GraphKeys.PYTHON_NEXT, KeyStrategy.REPLACE),
-				Map.entry(GraphKeys.PYTHON_FAIL_REASON, KeyStrategy.REPLACE),
-				Map.entry(GraphKeys.PYTHON_RESULT, KeyStrategy.REPLACE),
+				Map.entry(SqlKeys.SEMANTIC_PASSED, KeyStrategy.REPLACE),
+				Map.entry(PythonKeys.PYTHON_CODE, KeyStrategy.REPLACE),
+				Map.entry(PythonKeys.PYTHON_ATTEMPT, KeyStrategy.REPLACE),
+				Map.entry(PythonKeys.PYTHON_NEXT, KeyStrategy.REPLACE),
+				Map.entry(PythonKeys.PYTHON_FAIL_REASON, KeyStrategy.REPLACE),
+				Map.entry(PythonKeys.PYTHON_RESULT, KeyStrategy.REPLACE),
 				Map.entry(GraphKeys.STEP_RESULTS, KeyStrategy.REPLACE));
 		return new StateGraph("databuddy", keyStrategyFactory)
 			// 拓扑:入口 → 意图识别 → 按分类分流(chat → 终点;data_analysis → 知识召回)

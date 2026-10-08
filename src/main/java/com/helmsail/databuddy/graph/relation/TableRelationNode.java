@@ -46,7 +46,7 @@ public class TableRelationNode implements AsyncNodeAction {
 		List<String> seeds = seedTables(state);
 		if (seeds.isEmpty()) {
 			log.warn("表关系节点收到空表集,跳过: agent={}", agentId);
-			return CompletableFuture.completedFuture(Map.of(GraphKeys.NODE_STATUS, "表关系补齐跳过:无召回表"));
+			return CompletableFuture.completedFuture(Map.of(GraphKeys.PROGRESS, "表关系补齐跳过:无召回表"));
 		}
 		List<BizTableRelation> relations = agentService.relationsOf(agentId, seeds);
 		Set<String> finalTables = new LinkedHashSet<>(seeds);
@@ -72,7 +72,7 @@ public class TableRelationNode implements AsyncNodeAction {
 				pulledNames);
 		return CompletableFuture.completedFuture(Map.of(GraphKeys.SCHEMA, merge(state, pulledContents),
 				GraphKeys.RECALLED_TABLES, List.copyOf(finalTables), GraphKeys.TABLE_RELATIONS, relationsText(relationLines),
-				GraphKeys.NODE_STATUS, note(relationLines.size(), pulledNames)));
+				GraphKeys.PROGRESS, note(relationLines.size(), pulledNames)));
 	}
 
 	/** 读召回表集(前节点写入;防御性取值) */

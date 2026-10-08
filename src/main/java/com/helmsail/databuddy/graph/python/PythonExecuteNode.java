@@ -45,7 +45,7 @@ public class PythonExecuteNode implements AsyncNodeAction {
 	@Override
 	@Observed(name = "node.pythonExecute", contextualName = "Python 执行")
 	public CompletableFuture<Map<String, Object>> apply(OverAllState state) {
-		String code = state.value(GraphKeys.PYTHON_CODE, String.class).orElse("");
+		String code = state.value(PythonKeys.PYTHON_CODE, String.class).orElse("");
 		if (!StringUtils.hasText(code)) {
 			return CompletableFuture.completedFuture(fail(state, "生成结果为空,没有可执行的代码"));
 		}
@@ -66,26 +66,26 @@ public class PythonExecuteNode implements AsyncNodeAction {
 		String files = filesText(result);
 		Map<String, String> results = PlanUtils.withEntry(stepResults(state), "step_" + step, withFiles(stdout, files));
 		log.info("Python 执行成功: 第 {} 步, stdout {} 字符, 产物: {}", step, stdout.length(), files);
-		return CompletableFuture.completedFuture(Map.of(GraphKeys.PYTHON_RESULT, stdout, GraphKeys.PYTHON_FAIL_REASON, "",
-				GraphKeys.PYTHON_NEXT, "analyze", GraphKeys.STEP_RESULTS, results, GraphKeys.NODE_STATUS,
+		return CompletableFuture.completedFuture(Map.of(PythonKeys.PYTHON_RESULT, stdout, PythonKeys.PYTHON_FAIL_REASON, "",
+				PythonKeys.PYTHON_NEXT, "analyze", GraphKeys.STEP_RESULTS, results, GraphKeys.PROGRESS,
 				"Python 执行完成:" + filesNote(result)));
 	}
 
 	/** 失败:未超限打回生成(带原因);超限升级重规划,再超限终止语收场 */
 	private Map<String, Object> fail(OverAllState state, String reason) {
-		int attempt = NodeUtils.intOf(state, GraphKeys.PYTHON_ATTEMPT, 0);
+		int attempt = NodeUtils.intOf(state, PythonKeys.PYTHON_ATTEMPT, 0);
 		log.warn("Python 执行失败(第 {} 次尝试): {}", attempt, reason);
 		if (attempt >= MAX_PYTHON_ATTEMPT) {
 			int count = NodeUtils.intOf(state, GraphKeys.PLAN_REPAIR_COUNT, 0) + 1;
 			if (count > PlanUtils.MAX_PLAN_REPAIR) {
-				return Map.of(GraphKeys.PYTHON_FAIL_REASON, reason, GraphKeys.PYTHON_NEXT, "end", GraphKeys.FINAL_ANSWER,
-						TERMINATION, GraphKeys.NODE_STATUS, "Python 组重试超限且重规划超限:终止");
+				return Map.of(PythonKeys.PYTHON_FAIL_REASON, reason, PythonKeys.PYTHON_NEXT, "end", GraphKeys.FINAL_ANSWER,
+						TERMINATION, GraphKeys.PROGRESS, "Python 组重试超限且重规划超限:终止");
 			}
-			return Map.of(GraphKeys.PYTHON_FAIL_REASON, reason, GraphKeys.PYTHON_NEXT, "replan", GraphKeys.PLAN_REPAIR_COUNT,
+			return Map.of(PythonKeys.PYTHON_FAIL_REASON, reason, PythonKeys.PYTHON_NEXT, "replan", GraphKeys.PLAN_REPAIR_COUNT,
 					count, GraphKeys.PLAN_REPAIR_REASON, "Python 组多次失败: " + reason, GraphKeys.PLAN_STEP, 1,
-					GraphKeys.PYTHON_ATTEMPT, 0, GraphKeys.NODE_STATUS, "Python 组重试超限:升级重规划");
+					PythonKeys.PYTHON_ATTEMPT, 0, GraphKeys.PROGRESS, "Python 组重试超限:升级重规划");
 		}
-		return Map.of(GraphKeys.PYTHON_FAIL_REASON, reason, GraphKeys.PYTHON_NEXT, "regenerate", GraphKeys.NODE_STATUS,
+		return Map.of(PythonKeys.PYTHON_FAIL_REASON, reason, PythonKeys.PYTHON_NEXT, "regenerate", GraphKeys.PROGRESS,
 				"Python 执行失败,重新生成");
 	}
 

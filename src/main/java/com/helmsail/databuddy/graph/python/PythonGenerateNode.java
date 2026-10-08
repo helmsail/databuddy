@@ -50,7 +50,7 @@ public class PythonGenerateNode implements AsyncNodeAction {
 	@Override
 	@Observed(name = "node.pythonGenerate", contextualName = "Python 生成")
 	public CompletableFuture<Map<String, Object>> apply(OverAllState state) {
-		int attempt = NodeUtils.intOf(state, GraphKeys.PYTHON_ATTEMPT, 0) + 1;
+		int attempt = NodeUtils.intOf(state, PythonKeys.PYTHON_ATTEMPT, 0) + 1;
 		String canonical = state.value(GraphKeys.CANONICAL_QUERY, String.class)
 			.orElse(state.value(GraphKeys.INPUT, String.class).orElse(""));
 		String user = NodeUtils.renderPrompt(promptMapper, GraphKeys.PYTHON_GENERATE,
@@ -60,8 +60,8 @@ public class PythonGenerateNode implements AsyncNodeAction {
 		String output = aiModelServiceFactory.getChatClient().prompt().user(user).call().content();
 		String code = NodeUtils.stripFence(output).trim();
 		log.info("Python 代码生成完成(第 {} 次尝试, {} 字符)", attempt, code.length());
-		return CompletableFuture.completedFuture(Map.of(GraphKeys.PYTHON_CODE, code, GraphKeys.PYTHON_ATTEMPT, attempt,
-				GraphKeys.PYTHON_FAIL_REASON, "", GraphKeys.NODE_STATUS, "Python 代码生成完成(第 " + attempt + " 次尝试)"));
+		return CompletableFuture.completedFuture(Map.of(PythonKeys.PYTHON_CODE, code, PythonKeys.PYTHON_ATTEMPT, attempt,
+				PythonKeys.PYTHON_FAIL_REASON, "", GraphKeys.PROGRESS, "Python 代码生成完成(第 " + attempt + " 次尝试)"));
 	}
 
 	/** 读计划当前步指令(防御性解析;解析不了按泛化指令,不挡生成) */
@@ -111,12 +111,12 @@ public class PythonGenerateNode implements AsyncNodeAction {
 
 	/** 重写上下文:失败原因 + 上次代码(带着原文改);首次为"(无)" */
 	private String retryContext(OverAllState state) {
-		String reason = state.value(GraphKeys.PYTHON_FAIL_REASON, String.class).orElse("");
+		String reason = state.value(PythonKeys.PYTHON_FAIL_REASON, String.class).orElse("");
 		if (!StringUtils.hasText(reason)) {
 			return "(无)";
 		}
 		String context = reason;
-		String lastCode = state.value(GraphKeys.PYTHON_CODE, String.class).orElse("");
+		String lastCode = state.value(PythonKeys.PYTHON_CODE, String.class).orElse("");
 		if (StringUtils.hasText(lastCode)) {
 			context += "\n\n[上次生成的代码]\n```python\n" + lastCode + "\n```";
 		}

@@ -21,7 +21,7 @@ public class SqlGenerateDispatcher implements EdgeAction {
 		if (StringUtils.hasText(termination)) {
 			return END;
 		}
-		String next = state.value(GraphKeys.SQL_NEXT, "semantic");
+		String next = state.value(SqlKeys.SQL_NEXT, "semantic");
 		return switch (next) {
 			case "end" -> END;
 			case "replan" -> GraphKeys.PLANNER;

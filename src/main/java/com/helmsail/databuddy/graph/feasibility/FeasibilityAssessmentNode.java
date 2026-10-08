@@ -72,18 +72,18 @@ public class FeasibilityAssessmentNode implements AsyncNodeAction {
 			String clarification = root.path("clarification").asText("");
 			if (NEED_CLARIFICATION.equals(type) && StringUtils.hasText(clarification)) {
 				log.info("可行性评估: 需要澄清,反问=\"{}\"", clarification);
-				return Map.of(GraphKeys.FINAL_ANSWER, clarification, GraphKeys.NODE_STATUS, "可行性评估完成:需要澄清");
+				return Map.of(GraphKeys.FINAL_ANSWER, clarification, GraphKeys.PROGRESS, "可行性评估完成:需要澄清");
 			}
 			if (DATA_ANALYSIS.equals(type)) {
 				log.info("可行性评估: 可分析,放行");
-				return Map.of(GraphKeys.NODE_STATUS, "可行性评估完成:可行");
+				return Map.of(GraphKeys.PROGRESS, "可行性评估完成:可行");
 			}
 			log.warn("可行性评估输出不符合契约,按可行放行: {}", NodeUtils.brief(output));
 		}
 		catch (RuntimeException e) {
 			log.warn("可行性评估调用或解析失败,按可行放行: {}", e.getMessage());
 		}
-		return Map.of(GraphKeys.NODE_STATUS, "可行性评估回退:未能判定,按可行继续");
+		return Map.of(GraphKeys.PROGRESS, "可行性评估回退:未能判定,按可行继续");
 	}
 
 }

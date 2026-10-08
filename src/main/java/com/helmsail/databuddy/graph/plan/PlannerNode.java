@@ -65,7 +65,7 @@ public class PlannerNode implements AsyncNodeAction {
 		log.info("计划生成完成: {}", NodeUtils.brief(planJson));
 		// 步号重置为 1:新计划从头执行(重写场景旧步号作废)
 		return CompletableFuture.completedFuture(Map.of(GraphKeys.PLAN_JSON, planJson, GraphKeys.PLAN_STEP, 1,
-				GraphKeys.NODE_STATUS, note(planJson)));
+				GraphKeys.PROGRESS, note(planJson)));
 	}
 
 	/** 轻档固定计划:单步 SQL 生成,指令用规范查询(参考写死"SQL生成",这里用真实问题描述);不调 LLM */
@@ -82,7 +82,7 @@ public class PlannerNode implements AsyncNodeAction {
 		try {
 			log.info("轻档模式:固定单步计划(不调 LLM)");
 			return Map.of(GraphKeys.PLAN_JSON, objectMapper.writeValueAsString(plan), GraphKeys.PLAN_STEP, 1,
-					GraphKeys.NODE_STATUS, "规划完成:轻档模式单步执行");
+					GraphKeys.PROGRESS, "规划完成:轻档模式单步执行");
 		}
 		catch (JsonProcessingException e) {
 			throw new IllegalStateException("轻档计划序列化失败: " + e.getMessage(), e);
