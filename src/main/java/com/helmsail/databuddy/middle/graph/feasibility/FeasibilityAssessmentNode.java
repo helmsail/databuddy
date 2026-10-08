@@ -14,7 +14,6 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.helmsail.databuddy.bottom.aimodel.AiModelServiceFactory;
 import com.helmsail.databuddy.middle.graph.GraphKeys;
-import com.helmsail.databuddy.middle.graph.GraphNodes;
 import com.helmsail.databuddy.middle.graph.util.NodeUtils;
 import com.helmsail.databuddy.middle.prompt.NodePromptTemplateMapper;
 
@@ -30,11 +29,6 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 @Component
 public class FeasibilityAssessmentNode implements AsyncNodeAction {
-
-	/** 判定取值(提示词契约,与种子提示词一致) */
-	private static final String DATA_ANALYSIS = "data_analysis";
-
-	private static final String NEED_CLARIFICATION = "need_clarification";
 
 	private final NodePromptTemplateMapper promptMapper;
 
@@ -58,7 +52,7 @@ public class FeasibilityAssessmentNode implements AsyncNodeAction {
 		String tableRelations = state.value(GraphKeys.TABLE_RELATIONS, String.class).orElse("无");
 		String knowledge = state.value(GraphKeys.KNOWLEDGE, String.class).orElse("无");
 		String sessionMemory = state.value(GraphKeys.SESSION_MEMORY, String.class).orElse("(无)");
-		String user = NodeUtils.renderPrompt(promptMapper, GraphNodes.FEASIBILITY_ASSESSMENT,
+		String user = NodeUtils.renderPrompt(promptMapper, FeasibilityConstants.FEASIBILITY_ASSESSMENT,
 				Map.of("main_query", mainQuery, "schema", schema, "table_relations", tableRelations, "knowledge",
 						knowledge, "session_memory", sessionMemory));
 		return CompletableFuture.completedFuture(assess(user));
@@ -71,11 +65,11 @@ public class FeasibilityAssessmentNode implements AsyncNodeAction {
 			JsonNode root = NodeUtils.parseJson(objectMapper, output);
 			String type = root.path("requirement_type").asText("");
 			String clarification = root.path("clarification").asText("");
-			if (NEED_CLARIFICATION.equals(type) && StringUtils.hasText(clarification)) {
+			if (FeasibilityConstants.NEED_CLARIFICATION.equals(type) && StringUtils.hasText(clarification)) {
 				log.info("可行性评估: 需要澄清,反问=\"{}\"", clarification);
 				return Map.of(GraphKeys.FINAL_ANSWER, clarification, GraphKeys.PROGRESS, "可行性评估完成:需要澄清");
 			}
-			if (DATA_ANALYSIS.equals(type)) {
+			if (FeasibilityConstants.DATA_ANALYSIS.equals(type)) {
 				log.info("可行性评估: 可分析,放行");
 				return Map.of(GraphKeys.PROGRESS, "可行性评估完成:可行");
 			}

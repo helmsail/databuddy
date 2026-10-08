@@ -5,7 +5,7 @@ import org.springframework.util.StringUtils;
 import com.alibaba.cloud.ai.graph.OverAllState;
 import com.alibaba.cloud.ai.graph.action.EdgeAction;
 import com.helmsail.databuddy.middle.graph.GraphKeys;
-import com.helmsail.databuddy.middle.graph.GraphNodes;
+import com.helmsail.databuddy.middle.graph.plan.PlanConstants;
 
 import static com.alibaba.cloud.ai.graph.StateGraph.END;
 
@@ -22,13 +22,13 @@ public class PlanReviewDispatcher implements EdgeAction {
 			return END;
 		}
 		String next = state.value(GraphKeys.PLAN_NEXT_NODE, "");
-		if (GraphNodes.PLAN_EXECUTOR.equals(next)) {
-			return GraphNodes.PLAN_EXECUTOR;
+		if (PlanConstants.PLAN_EXECUTOR.equals(next)) {
+			return PlanConstants.PLAN_EXECUTOR;
 		}
-		if (GraphNodes.PLAN_REVIEW.equals(next)) {
-			return GraphNodes.PLAN_REVIEW;
+		if (ReviewConstants.PLAN_REVIEW.equals(next)) {
+			return ReviewConstants.PLAN_REVIEW;
 		}
-		return GraphNodes.PLANNER;
+		return PlanConstants.PLANNER;
 	}
 
 }

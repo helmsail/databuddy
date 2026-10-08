@@ -18,7 +18,6 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.helmsail.databuddy.bottom.aimodel.AiModelServiceFactory;
 import com.helmsail.databuddy.middle.graph.GraphKeys;
-import com.helmsail.databuddy.middle.graph.GraphNodes;
 import com.helmsail.databuddy.middle.graph.util.NodeUtils;
 import com.helmsail.databuddy.middle.prompt.NodePromptTemplateMapper;
 
@@ -55,7 +54,7 @@ public class QueryEnhanceNode implements AsyncNodeAction {
 		String input = state.value(GraphKeys.INPUT, String.class).orElse("");
 		String knowledge = state.value(GraphKeys.KNOWLEDGE, String.class).orElse("无");
 		String sessionMemory = state.value(GraphKeys.SESSION_MEMORY, String.class).orElse("(无)");
-		String user = NodeUtils.renderPrompt(promptMapper, GraphNodes.QUERY_ENHANCE,
+		String user = NodeUtils.renderPrompt(promptMapper, EnhanceConstants.QUERY_ENHANCE,
 				Map.of("input", input, "knowledge", knowledge, "session_memory", sessionMemory,
 						"current_time", LocalDateTime.now().format(TIME_FORMAT)));
 		return CompletableFuture.completedFuture(parse(input, user));

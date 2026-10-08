@@ -5,7 +5,7 @@ import org.springframework.util.StringUtils;
 import com.alibaba.cloud.ai.graph.OverAllState;
 import com.alibaba.cloud.ai.graph.action.EdgeAction;
 import com.helmsail.databuddy.middle.graph.GraphKeys;
-import com.helmsail.databuddy.middle.graph.GraphNodes;
+import com.helmsail.databuddy.middle.graph.plan.PlanConstants;
 
 import static com.alibaba.cloud.ai.graph.StateGraph.END;
 
@@ -22,12 +22,12 @@ public class PythonExecuteDispatcher implements EdgeAction {
 		if (StringUtils.hasText(termination)) {
 			return END;
 		}
-		String next = state.value(PythonKeys.PYTHON_NEXT, "analyze");
+		String next = state.value(GraphKeys.PYTHON_NEXT, "analyze");
 		return switch (next) {
 			case "end" -> END;
-			case "replan" -> GraphNodes.PLANNER;
-			case "regenerate" -> GraphNodes.PYTHON_GENERATE;
-			default -> GraphNodes.PYTHON_ANALYZE;
+			case "replan" -> PlanConstants.PLANNER;
+			case "regenerate" -> PythonConstants.PYTHON_GENERATE;
+			default -> PythonConstants.PYTHON_ANALYZE;
 		};
 	}
 

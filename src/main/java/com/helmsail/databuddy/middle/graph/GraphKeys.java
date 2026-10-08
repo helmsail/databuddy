@@ -1,33 +1,10 @@
 package com.helmsail.databuddy.middle.graph;
 
 /**
- * 图状态键与帧类型唯一登记:SSE 帧类型 + 跨域状态键
- * (节点 ID 见 GraphNodes;域内自洽的状态键见子包 IntentKeys / PythonKeys / SqlKeys)
+ * 状态键唯一登记(OverAllState;取值即状态键名,全仓 snake_case;不再按域分家)
+ * (节点常量见各域 XxxConstants——节点 ID/契约取值/重试上限;SSE 帧类型见 GraphSseChunk)
  */
 public final class GraphKeys {
-
-	// —— SSE 帧类型(对外契约;取值即 SSE 的 event 名) ——
-
-	/** 文本帧:流式片段或整段文本 */
-	public static final String TEXT = "text";
-
-	/** 完成帧:本次执行正常结束 */
-	public static final String DONE = "done";
-
-	/** 错误帧:本次执行失败 */
-	public static final String ERROR = "error";
-
-	/** 过程帧:节点完成的轻量播报(结构化事件,与正文分离;对齐 AG-UI STEP / Dify node_finished) */
-	public static final String STEP = "step";
-
-	/** 计划帧:待确认的执行计划(text = 计划 JSON;人工确认闸挂起时下发) */
-	public static final String PLAN = "plan";
-
-	/** SQL 帧:新生成的 SQL 文本(text = SQL;去重后按需下发) */
-	public static final String SQL = "sql";
-
-	/** 结果帧:SQL 执行结果(text = 结果 JSON:{step,sql,columns,rows,row_count,truncated}) */
-	public static final String RESULT = "result";
 
 	// —— 状态键(OverAllState;随节点接入按需增补) ——
 
@@ -79,8 +56,8 @@ public final class GraphKeys {
 	/** 人工确认决定(恢复时由 updateState 写入:{approved, feedback}) */
 	public static final String PLAN_REVIEW_DECISION = "plan_review_decision";
 
-	/** 计划重写计数(人工否决 / 执行组超限升级 共用;上限见各节点) */
-	public static final String PLAN_REPAIR_COUNT = "plan_repair_count";
+	/** 计划重试计数(人工否决 / 执行组超限升级 共用;上限见各节点) */
+	public static final String PLAN_RETRY_COUNT = "plan_retry_count";
 
 	/** 计划重写原因(注入规划提示词;失败路径每次覆盖写) */
 	public static final String PLAN_REPAIR_REASON = "plan_repair_reason";
@@ -99,6 +76,42 @@ public final class GraphKeys {
 
 	/** 分步结果累积(Map<String,String>;step_N = 结果文本(SQL 结果 JSON / Python stdout 及产出清单),step_N_analysis = 分析文本) */
 	public static final String STEP_RESULTS = "step_results";
+
+	// —— 意图域 ——
+
+	/** 意图分类结果(取值见 intent 包 IntentConstants;IntentRecognitionDispatcher 据此分流) */
+	public static final String CLASSIFICATION = "classification";
+
+	// —— SQL 组 ——
+
+	/** SQL 组重试计数(生成即 +1;执行成功清零;超限触发升级) */
+	public static final String SQL_RETRY_COUNT = "sql_retry_count";
+
+	/** SQL 组去向标记(组内节点写,分流器读):validate / regenerate / replan / end / hub */
+	public static final String SQL_NEXT = "sql_next";
+
+	/** SQL 打回原因(语义不过 / 执行失败;生成成功时清空) */
+	public static final String SQL_REPAIR_REASON = "sql_repair_reason";
+
+	/** SQL 校验结果(SQL 校验节点写,分流器读;未通过原因写 SQL_REPAIR_REASON 打回生成) */
+	public static final String SQL_PASSED = "sql_passed";
+
+	// —— Python 组 ——
+
+	/** 当前 Python 代码(生成节点写;执行节点读) */
+	public static final String PYTHON_CODE = "python_code";
+
+	/** Python 组重试计数(生成即 +1;分析完成清零;超限触发升级) */
+	public static final String PYTHON_RETRY_COUNT = "python_retry_count";
+
+	/** Python 组去向标记(组内节点写,分流器读):analyze / regenerate / replan / end */
+	public static final String PYTHON_NEXT = "python_next";
+
+	/** Python 失败原因(执行失败/超时/无产出;注入重写提示词) */
+	public static final String PYTHON_FAIL_REASON = "python_fail_reason";
+
+	/** Python 标准输出(stdout,约定的 JSON 结果) */
+	public static final String PYTHON_RESULT = "python_result";
 
 	private GraphKeys() {
 	}

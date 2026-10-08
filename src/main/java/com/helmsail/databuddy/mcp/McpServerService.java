@@ -21,7 +21,6 @@ import com.helmsail.databuddy.agent.Agent;
 import com.helmsail.databuddy.agent.AgentService;
 import com.helmsail.databuddy.exception.BusinessException;
 import com.helmsail.databuddy.exception.ErrorCode;
-import com.helmsail.databuddy.middle.graph.GraphKeys;
 import com.helmsail.databuddy.middle.graph.GraphSseChunk;
 
 import lombok.extern.slf4j.Slf4j;
@@ -80,7 +79,7 @@ public class McpServerService {
 			requireRequest(request);
 			List<GraphSseChunk> chunks = execute(requireAgentId(request.agentId()),
 					requireQuestion(request.naturalQuery()));
-			String sql = lastText(chunks, GraphKeys.SQL);
+			String sql = lastText(chunks, GraphSseChunk.SQL);
 			return StringUtils.hasText(sql) ? sql : notCompleted(chunks);
 		});
 	}
@@ -91,7 +90,7 @@ public class McpServerService {
 			requireRequest(request);
 			List<GraphSseChunk> chunks = execute(requireAgentId(request.agentId()),
 					requireQuestion(request.naturalQuery()));
-			String resultJson = lastText(chunks, GraphKeys.RESULT);
+			String resultJson = lastText(chunks, GraphSseChunk.RESULT);
 			return StringUtils.hasText(resultJson) ? preview(resultJson) : notCompleted(chunks);
 		});
 	}
@@ -148,7 +147,7 @@ public class McpServerService {
 			throw new BusinessException(ErrorCode.SYSTEM_ERROR, "执行等待失败: " + e.getMessage(), e);
 		}
 		List<GraphSseChunk> chunks = frames.stream().map(ServerSentEvent::data).toList();
-		String error = lastText(chunks, GraphKeys.ERROR);
+		String error = lastText(chunks, GraphSseChunk.ERROR);
 		if (StringUtils.hasText(error)) {
 			throw new BusinessException(ErrorCode.SYSTEM_ERROR, error);
 		}
@@ -168,7 +167,7 @@ public class McpServerService {
 
 	/** 未产出目标字段:优先返回图的终止语(text 帧),否则给通用说明 */
 	private String notCompleted(List<GraphSseChunk> chunks) {
-		String answer = lastText(chunks, GraphKeys.TEXT);
+		String answer = lastText(chunks, GraphSseChunk.TEXT);
 		return StringUtils.hasText(answer) ? "未能完成: " + answer
 				: "未能完成:未生成结果(请检查智能体是否绑定了数据表,以及模型配置是否可用)";
 	}

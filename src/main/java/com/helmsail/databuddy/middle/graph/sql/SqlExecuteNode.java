@@ -57,14 +57,14 @@ public class SqlExecuteNode implements AsyncNodeAction {
 		String sql = state.value(GraphKeys.SQL_QUERY, String.class).orElse("");
 		if (!StringUtils.hasText(sql)) {
 			log.warn("SQL 执行为空,打回生成");
-			return CompletableFuture.completedFuture(Map.of(SqlKeys.SQL_NEXT, "regenerate", SqlKeys.SQL_REPAIR_REASON,
+			return CompletableFuture.completedFuture(Map.of(GraphKeys.SQL_NEXT, "regenerate", GraphKeys.SQL_REPAIR_REASON,
 					"SQL 为空", GraphKeys.PROGRESS, "SQL 为空,重新生成"));
 		}
 		long agentId = NodeUtils.longOf(state, GraphKeys.AGENT_ID);
 		AgentBizTableService.DatabaseTarget target = tableService.databaseTargetOf(agentId,
 				NodeUtils.stringList(state, GraphKeys.RECALLED_TABLES));
 		if (target == null) {
-			return CompletableFuture.completedFuture(Map.of(SqlKeys.SQL_NEXT, "end", GraphKeys.FINAL_ANSWER,
+			return CompletableFuture.completedFuture(Map.of(GraphKeys.SQL_NEXT, "end", GraphKeys.FINAL_ANSWER,
 					"无法定位分析目标库(智能体未绑定数据表,或数据表跨多个库无法判定),本轮分析无法继续。", GraphKeys.PROGRESS,
 					"SQL 执行终止:无法定位目标库"));
 		}
@@ -75,14 +75,14 @@ public class SqlExecuteNode implements AsyncNodeAction {
 			Map<String, String> results = PlanUtils.withEntry(stepResults(state), "step_" + step, resultJson);
 			log.info("SQL 执行成功: 第 {} 步, {} 行", step, data.getRows().size());
 			return CompletableFuture.completedFuture(Map.of(GraphKeys.SQL_RESULT, resultJson, GraphKeys.STEP_RESULTS, results,
-					GraphKeys.PLAN_STEP_NO, step + 1, SqlKeys.SQL_ATTEMPT, 0, SqlKeys.SQL_REPAIR_REASON, "",
-					SqlKeys.SQL_NEXT, "hub", GraphKeys.PROGRESS, "SQL 执行完成:" + data.getRows().size() + " 行结果"));
+					GraphKeys.PLAN_STEP_NO, step + 1, GraphKeys.SQL_RETRY_COUNT, 0, GraphKeys.SQL_REPAIR_REASON, "",
+					GraphKeys.SQL_NEXT, "hub", GraphKeys.PROGRESS, "SQL 执行完成:" + data.getRows().size() + " 行结果"));
 		}
 		catch (RuntimeException e) {
 			String reason = StringUtils.hasText(e.getMessage()) ? e.getMessage() : e.getClass().getSimpleName();
 			log.warn("SQL 执行失败,打回生成: {}", reason);
-			return CompletableFuture.completedFuture(Map.of(SqlKeys.SQL_REPAIR_REASON, "执行失败: " + reason,
-					SqlKeys.SQL_NEXT, "regenerate", GraphKeys.PROGRESS, "SQL 执行失败,重新生成"));
+			return CompletableFuture.completedFuture(Map.of(GraphKeys.SQL_REPAIR_REASON, "执行失败: " + reason,
+					GraphKeys.SQL_NEXT, "regenerate", GraphKeys.PROGRESS, "SQL 执行失败,重新生成"));
 		}
 	}
 

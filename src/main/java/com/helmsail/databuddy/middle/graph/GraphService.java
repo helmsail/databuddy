@@ -14,6 +14,7 @@ import com.alibaba.cloud.ai.graph.RunnableConfig;
 import com.alibaba.cloud.ai.graph.StateGraph;
 import com.alibaba.cloud.ai.graph.checkpoint.BaseCheckpointSaver;
 import com.alibaba.cloud.ai.graph.state.StateSnapshot;
+import com.helmsail.databuddy.middle.graph.review.ReviewConstants;
 import com.helmsail.databuddy.middle.graph.util.NodeUtils;
 import com.helmsail.databuddy.middle.memory.MemoryService;
 
@@ -115,7 +116,7 @@ public class GraphService {
 			// 只放行"有文本的文本帧"与协议帧
 			.filter(sse -> {
 				GraphSseChunk chunk = sse.data();
-				if (!GraphKeys.TEXT.equals(chunk.getEventType())) {
+				if (!GraphSseChunk.TEXT.equals(chunk.getEventType())) {
 					return true;
 				}
 				return StringUtils.hasText(chunk.getText());
@@ -173,7 +174,7 @@ public class GraphService {
 		// 挂起判定:下一跳含 PLAN_REVIEW 节点(中断在该节点前;决定写入不改 next,由续跑消费)
 		if (snapshot == null || !StringUtils.hasText(snapshot.next()) || Arrays.stream(snapshot.next().split(","))
 			.map(String::trim)
-			.noneMatch(GraphNodes.PLAN_REVIEW::equals)) {
+			.noneMatch(ReviewConstants.PLAN_REVIEW::equals)) {
 			fail(sink, sessionId, "计划不存在或已失效");
 			return;
 		}

@@ -13,7 +13,6 @@ import com.alibaba.cloud.ai.graph.action.AsyncNodeAction;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.helmsail.databuddy.bottom.aimodel.AiModelServiceFactory;
 import com.helmsail.databuddy.middle.graph.GraphKeys;
-import com.helmsail.databuddy.middle.graph.GraphNodes;
 import com.helmsail.databuddy.middle.graph.util.NodeUtils;
 import com.helmsail.databuddy.middle.prompt.NodePromptTemplateMapper;
 
@@ -64,7 +63,7 @@ public class PlannerNode implements AsyncNodeAction {
 		}
 		// 生成-校验本地循环:坏计划不出厂(计数只是循环变量,不落键);重试超限写终止语
 		for (int attempt = 1; ; attempt++) {
-			String user = NodeUtils.renderPrompt(promptMapper, GraphNodes.PLANNER,
+			String user = NodeUtils.renderPrompt(promptMapper, PlanConstants.PLANNER,
 					Map.of("main_query", mainQuery, "schema", schema, "knowledge", knowledge, "repair_context",
 							repairContext, "nl2sql_enabled", light ? "轻档" : "常规"));
 			String output = aiModelServiceFactory.getChatClient().prompt().user(user).call().content();
@@ -84,8 +83,8 @@ public class PlannerNode implements AsyncNodeAction {
 				return CompletableFuture.completedFuture(Map.of(GraphKeys.PLAN_JSON, planJson, GraphKeys.PLAN_STEP_NO, 1,
 						GraphKeys.PROGRESS, "规划完成:共 " + plan.getPlanSteps().size() + " 步"));
 			}
-			if (attempt > PlanUtils.MAX_PLAN_REPAIR) {
-				log.error("计划重写超限({} 次),终止: {}", PlanUtils.MAX_PLAN_REPAIR, invalid);
+			if (attempt > PlanConstants.STRUCTURE_RETRY_MAX) {
+				log.error("计划重写超限({} 次),终止: {}", PlanConstants.STRUCTURE_RETRY_MAX, invalid);
 				return CompletableFuture.completedFuture(Map.of(GraphKeys.FINAL_ANSWER, TERMINATION, GraphKeys.PROGRESS,
 						"计划校验失败且重写超限:终止"));
 			}

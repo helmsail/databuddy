@@ -14,7 +14,6 @@ import com.alibaba.cloud.ai.graph.action.AsyncNodeAction;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.helmsail.databuddy.bottom.aimodel.AiModelServiceFactory;
 import com.helmsail.databuddy.middle.graph.GraphKeys;
-import com.helmsail.databuddy.middle.graph.GraphNodes;
 import com.helmsail.databuddy.middle.graph.plan.Plan;
 import com.helmsail.databuddy.middle.graph.plan.PlanStep;
 import com.helmsail.databuddy.middle.graph.plan.PlanUtils;
@@ -59,7 +58,7 @@ public class ReportGeneratorNode implements AsyncNodeAction {
 		String mainQuery = state.value(GraphKeys.MAIN_QUERY, String.class)
 			.orElse(state.value(GraphKeys.INPUT, String.class).orElse(""));
 		String agentMemory = state.value(GraphKeys.AGENT_MEMORY, String.class).orElse("(无)");
-		String user = NodeUtils.renderPrompt(promptMapper, GraphNodes.REPORT_GENERATOR, Map.of("main_query", mainQuery,
+		String user = NodeUtils.renderPrompt(promptMapper, ReportConstants.REPORT_GENERATOR, Map.of("main_query", mainQuery,
 				"plan_summary", planSummary(state), "step_results", resultsText(state), "agent_memory", agentMemory));
 		long agentId = NodeUtils.longOf(state, GraphKeys.AGENT_ID);
 		String report = aiModelServiceFactory.getChatClient()

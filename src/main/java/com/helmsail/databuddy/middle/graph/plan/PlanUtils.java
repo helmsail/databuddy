@@ -9,7 +9,8 @@ import org.springframework.util.StringUtils;
 import com.alibaba.cloud.ai.graph.OverAllState;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.helmsail.databuddy.middle.graph.GraphKeys;
-import com.helmsail.databuddy.middle.graph.GraphNodes;
+import com.helmsail.databuddy.middle.graph.python.PythonConstants;
+import com.helmsail.databuddy.middle.graph.sql.SqlConstants;
 import com.helmsail.databuddy.middle.graph.util.NodeUtils;
 
 /**
@@ -18,14 +19,8 @@ import com.helmsail.databuddy.middle.graph.util.NodeUtils;
  */
 public final class PlanUtils {
 
-	/** 计划步数上限(硬边界:防计划无限膨胀) */
-	public static final int MAX_STEPS = 6;
-
-	/** 计划重写次数上限(规划本地校验重试与各打回源计数同用此值;超过 → 终止语收场) */
-	public static final int MAX_PLAN_REPAIR = 3;
-
 	/** 计划允许的执行组(取值=组入口节点 ID,即枢纽可派活目标;报告固定收尾,不进计划) */
-	private static final Set<String> ALLOWED_GROUPS = Set.of(GraphNodes.SQL_GENERATE, GraphNodes.PYTHON_GENERATE);
+	private static final Set<String> ALLOWED_GROUPS = Set.of(SqlConstants.SQL_GENERATE, PythonConstants.PYTHON_GENERATE);
 
 	private PlanUtils() {
 	}
@@ -52,8 +47,8 @@ public final class PlanUtils {
 		if (plan == null || plan.getPlanSteps() == null || plan.getPlanSteps().isEmpty()) {
 			return "执行计划为空";
 		}
-		if (plan.getPlanSteps().size() > MAX_STEPS) {
-			return "计划步骤数 " + plan.getPlanSteps().size() + " 超过上限 " + MAX_STEPS;
+		if (plan.getPlanSteps().size() > PlanConstants.PLAN_STEPS_MAX) {
+			return "计划步骤数 " + plan.getPlanSteps().size() + " 超过上限 " + PlanConstants.PLAN_STEPS_MAX;
 		}
 		for (PlanStep step : plan.getPlanSteps()) {
 			if (step.getSelectGroup() == null || !ALLOWED_GROUPS.contains(step.getSelectGroup())) {

@@ -13,7 +13,6 @@ import com.alibaba.cloud.ai.graph.OverAllState;
 import com.alibaba.cloud.ai.graph.action.AsyncNodeAction;
 import com.helmsail.databuddy.bottom.aimodel.AiModelServiceFactory;
 import com.helmsail.databuddy.middle.graph.GraphKeys;
-import com.helmsail.databuddy.middle.graph.GraphNodes;
 import com.helmsail.databuddy.middle.graph.plan.PlanUtils;
 import com.helmsail.databuddy.middle.graph.util.NodeUtils;
 import com.helmsail.databuddy.middle.prompt.NodePromptTemplateMapper;
@@ -45,8 +44,8 @@ public class PythonAnalyzeNode implements AsyncNodeAction {
 	public CompletableFuture<Map<String, Object>> apply(OverAllState state) {
 		String mainQuery = state.value(GraphKeys.MAIN_QUERY, String.class)
 			.orElse(state.value(GraphKeys.INPUT, String.class).orElse(""));
-		String pythonResult = state.value(PythonKeys.PYTHON_RESULT, String.class).orElse("(无输出)");
-		String user = NodeUtils.renderPrompt(promptMapper, GraphNodes.PYTHON_ANALYZE,
+		String pythonResult = state.value(GraphKeys.PYTHON_RESULT, String.class).orElse("(无输出)");
+		String user = NodeUtils.renderPrompt(promptMapper, PythonConstants.PYTHON_ANALYZE,
 				Map.of("main_query", mainQuery, "python_result", pythonResult));
 		String analysis = aiModelServiceFactory.getChatClient().prompt().user(user).call().content();
 		if (!StringUtils.hasText(analysis)) { // 空产出进 Map.of 会 NPE,也防报告只见空白小节
@@ -57,7 +56,7 @@ public class PythonAnalyzeNode implements AsyncNodeAction {
 		Map<String, String> results = PlanUtils.withEntry(stepResults(state), "step_" + step + "_analysis", analysis);
 		log.info("Python 分析完成: 第 {} 步", step);
 		return CompletableFuture.completedFuture(Map.of(GraphKeys.STEP_RESULTS, results, GraphKeys.PLAN_STEP_NO, step + 1,
-				PythonKeys.PYTHON_ATTEMPT, 0, GraphKeys.PROGRESS, "Python 分析完成"));
+				GraphKeys.PYTHON_RETRY_COUNT, 0, GraphKeys.PROGRESS, "Python 分析完成"));
 	}
 
 	/** 分步结果累积(整表回写:REPLACE 键语义) */

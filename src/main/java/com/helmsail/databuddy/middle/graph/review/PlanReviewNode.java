@@ -12,8 +12,7 @@ import org.springframework.util.StringUtils;
 import com.alibaba.cloud.ai.graph.OverAllState;
 import com.alibaba.cloud.ai.graph.action.AsyncNodeAction;
 import com.helmsail.databuddy.middle.graph.GraphKeys;
-import com.helmsail.databuddy.middle.graph.GraphNodes;
-import com.helmsail.databuddy.middle.graph.plan.PlanUtils;
+import com.helmsail.databuddy.middle.graph.plan.PlanConstants;
 import com.helmsail.databuddy.middle.graph.util.NodeUtils;
 
 import lombok.extern.slf4j.Slf4j;
@@ -38,7 +37,7 @@ public class PlanReviewNode implements AsyncNodeAction {
 		if (decision.isEmpty()) {
 			// 异常路径(未收到决定):回自身等待——静态中断会在再次到达本节点前挂起,不会忙转
 			log.warn("计划确认节点未收到决定,回到等待");
-			return CompletableFuture.completedFuture(Map.of(GraphKeys.PLAN_NEXT_NODE, GraphNodes.PLAN_REVIEW));
+			return CompletableFuture.completedFuture(Map.of(GraphKeys.PLAN_NEXT_NODE, ReviewConstants.PLAN_REVIEW));
 		}
 		Object approvedValue = decision.get("approved");
 		boolean approved = approvedValue instanceof Boolean bool ? bool
@@ -47,18 +46,18 @@ public class PlanReviewNode implements AsyncNodeAction {
 		if (approved) {
 			log.info("计划已确认,放行执行");
 			return CompletableFuture.completedFuture(Map.of(GraphKeys.HUMAN_REVIEW_ENABLED, false, GraphKeys.PLAN_NEXT_NODE,
-					GraphNodes.PLAN_EXECUTOR, GraphKeys.PROGRESS, "计划已确认:开始执行"));
+					PlanConstants.PLAN_EXECUTOR, GraphKeys.PROGRESS, "计划已确认:开始执行"));
 		}
-		int count = NodeUtils.intOf(state, GraphKeys.PLAN_REPAIR_COUNT, 0) + 1;
-		if (count > PlanUtils.MAX_PLAN_REPAIR) {
-			log.warn("计划否决超限({} 次),终止", PlanUtils.MAX_PLAN_REPAIR);
+		int count = NodeUtils.intOf(state, GraphKeys.PLAN_RETRY_COUNT, 0) + 1;
+		if (count > PlanConstants.PLAN_RETRY_MAX) {
+			log.warn("计划否决超限({} 次),终止", PlanConstants.PLAN_RETRY_MAX);
 			return CompletableFuture.completedFuture(Map.of(GraphKeys.FINAL_ANSWER, TERMINATION, GraphKeys.PROGRESS,
 					"计划被否决且超限:终止"));
 		}
 		log.info("计划被否决(第 {} 次),重新规划: {}", count, feedback);
-		return CompletableFuture.completedFuture(Map.of(GraphKeys.PLAN_REPAIR_COUNT, count, GraphKeys.PLAN_REPAIR_REASON,
+		return CompletableFuture.completedFuture(Map.of(GraphKeys.PLAN_RETRY_COUNT, count, GraphKeys.PLAN_REPAIR_REASON,
 				StringUtils.hasText(feedback) ? feedback : "用户否决了计划", GraphKeys.PLAN_STEP_NO, 1,
-				GraphKeys.HUMAN_REVIEW_ENABLED, true, GraphKeys.PLAN_NEXT_NODE, GraphNodes.PLANNER, GraphKeys.PROGRESS,
+				GraphKeys.HUMAN_REVIEW_ENABLED, true, GraphKeys.PLAN_NEXT_NODE, PlanConstants.PLANNER, GraphKeys.PROGRESS,
 				"计划已被否决:重新规划"));
 	}
 

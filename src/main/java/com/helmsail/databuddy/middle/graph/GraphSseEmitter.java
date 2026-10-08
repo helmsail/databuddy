@@ -24,32 +24,32 @@ class GraphSseEmitter {
 
 	/** 过程状态帧(step;节点侧 PROGRESS 原文) */
 	void step(String node, String text) {
-		emit(GraphSseChunk.builder().eventType(GraphKeys.STEP).node(node).text(text).build());
+		emit(GraphSseChunk.builder().eventType(GraphSseChunk.STEP).node(node).text(text).build());
 	}
 
 	/** SQL 帧(新生成 / 重写的 SQL 原文) */
 	void sql(String node, String text) {
-		emit(GraphSseChunk.builder().eventType(GraphKeys.SQL).node(node).text(text).build());
+		emit(GraphSseChunk.builder().eventType(GraphSseChunk.SQL).node(node).text(text).build());
 	}
 
 	/** 结果帧(契约 JSON) */
 	void result(String node, String text) {
-		emit(GraphSseChunk.builder().eventType(GraphKeys.RESULT).node(node).text(text).build());
+		emit(GraphSseChunk.builder().eventType(GraphSseChunk.RESULT).node(node).text(text).build());
 	}
 
 	/** 计划帧(挂起轮:待确认计划 JSON) */
 	void plan(String text) {
-		emit(GraphSseChunk.builder().eventType(GraphKeys.PLAN).text(text).build());
+		emit(GraphSseChunk.builder().eventType(GraphSseChunk.PLAN).text(text).build());
 	}
 
 	/** 最终回复整段播报 */
 	void text(String text) {
-		emit(GraphSseChunk.builder().eventType(GraphKeys.TEXT).text(text).build());
+		emit(GraphSseChunk.builder().eventType(GraphSseChunk.TEXT).text(text).build());
 	}
 
 	/** 收尾帧 */
 	void done() {
-		emit(GraphSseChunk.builder().eventType(GraphKeys.DONE).build());
+		emit(GraphSseChunk.builder().eventType(GraphSseChunk.DONE).build());
 	}
 
 	/** 错误帧(流内唯一可达通道) */

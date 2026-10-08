@@ -14,7 +14,6 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.helmsail.databuddy.bottom.aimodel.AiModelServiceFactory;
 import com.helmsail.databuddy.middle.graph.GraphKeys;
-import com.helmsail.databuddy.middle.graph.GraphNodes;
 import com.helmsail.databuddy.middle.graph.util.NodeUtils;
 import com.helmsail.databuddy.middle.memory.AgentMemoryTools;
 import com.helmsail.databuddy.middle.prompt.NodePromptTemplateMapper;
@@ -51,7 +50,7 @@ public class IntentRecognitionNode implements AsyncNodeAction {
 		String input = state.value(GraphKeys.INPUT, String.class).orElse("");
 		String sessionMemory = state.value(GraphKeys.SESSION_MEMORY, String.class).orElse("(无)");
 		String agentMemory = state.value(GraphKeys.AGENT_MEMORY, String.class).orElse("(无)");
-		String user = NodeUtils.renderPrompt(promptMapper, GraphNodes.INTENT_RECOGNITION,
+		String user = NodeUtils.renderPrompt(promptMapper, IntentConstants.INTENT_RECOGNITION,
 				Map.of("input", input, "session_memory", sessionMemory, "agent_memory", agentMemory));
 		long agentId = NodeUtils.longOf(state, GraphKeys.AGENT_ID);
 		String output = aiModelServiceFactory.getChatClient()
@@ -68,19 +67,18 @@ public class IntentRecognitionNode implements AsyncNodeAction {
 	private Map<String, Object> toUpdates(String output) {
 		JsonNode root = NodeUtils.parseJson(objectMapper, output);
 		String classification = root.path("classification").asText("");
-		IntentType type = IntentType.from(classification);
-		if (type == null) {
+		if (!IntentConstants.DATA_ANALYSIS.equals(classification) && !IntentConstants.CHAT.equals(classification)) {
 			throw new IllegalStateException("意图识别输出非法(classification=" + classification + "): " + NodeUtils.brief(output));
 		}
-		if (type == IntentType.CHAT) {
+		if (IntentConstants.CHAT.equals(classification)) {
 			String response = root.path("response").asText("");
 			if (!StringUtils.hasText(response)) {
 				throw new IllegalStateException("意图识别为 chat 但未产出回复: " + NodeUtils.brief(output));
 			}
-			return Map.of(IntentKeys.CLASSIFICATION, classification, GraphKeys.FINAL_ANSWER, response,
+			return Map.of(GraphKeys.CLASSIFICATION, classification, GraphKeys.FINAL_ANSWER, response,
 					GraphKeys.PROGRESS, "意图识别完成:闲聊");
 		}
-		return Map.of(IntentKeys.CLASSIFICATION, classification, GraphKeys.PROGRESS, "意图识别完成:数据分析");
+		return Map.of(GraphKeys.CLASSIFICATION, classification, GraphKeys.PROGRESS, "意图识别完成:数据分析");
 	}
 
 }

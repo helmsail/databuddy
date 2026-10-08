@@ -356,7 +356,7 @@ FROM DUAL
 WHERE NOT EXISTS (SELECT 1 FROM node_prompt_template WHERE name = 'sql-generate');
 
 INSERT INTO node_prompt_template (name, content, version, enabled)
-SELECT 'semantic-consistency',
+SELECT 'sql-validate',
 '你是严格的 SQL 审计专家和 {dialect} 语法专家:验证待验证 SQL 是否准确完成【当前步骤任务】,并符合数据库事实。
 
 【当前步骤任务(核心依据)】
@@ -385,7 +385,7 @@ SELECT 'semantic-consistency',
 要求:仅输出 JSON,不要输出其他内容;passed 为布尔值,reason 为简短结论(不通过时说明字段、逻辑或语法问题)。',
 1, 1
 FROM DUAL
-WHERE NOT EXISTS (SELECT 1 FROM node_prompt_template WHERE name = 'semantic-consistency');
+WHERE NOT EXISTS (SELECT 1 FROM node_prompt_template WHERE name = 'sql-validate');
 
 INSERT INTO node_prompt_template (name, content, version, enabled)
 SELECT 'python-generate',

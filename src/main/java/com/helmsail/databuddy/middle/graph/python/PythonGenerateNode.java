@@ -14,7 +14,6 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.helmsail.databuddy.bottom.aimodel.AiModelServiceFactory;
 import com.helmsail.databuddy.middle.graph.GraphKeys;
-import com.helmsail.databuddy.middle.graph.GraphNodes;
 import com.helmsail.databuddy.middle.graph.plan.PlanUtils;
 import com.helmsail.databuddy.middle.graph.util.NodeUtils;
 import com.helmsail.databuddy.middle.prompt.NodePromptTemplateMapper;
@@ -50,18 +49,18 @@ public class PythonGenerateNode implements AsyncNodeAction {
 	@Override
 	@Observed(name = "node.pythonGenerate", contextualName = "Python 生成")
 	public CompletableFuture<Map<String, Object>> apply(OverAllState state) {
-		int attempt = NodeUtils.intOf(state, PythonKeys.PYTHON_ATTEMPT, 0) + 1;
+		int attempt = NodeUtils.intOf(state, GraphKeys.PYTHON_RETRY_COUNT, 0) + 1;
 		String mainQuery = state.value(GraphKeys.MAIN_QUERY, String.class)
 			.orElse(state.value(GraphKeys.INPUT, String.class).orElse(""));
-		String user = NodeUtils.renderPrompt(promptMapper, GraphNodes.PYTHON_GENERATE,
+		String user = NodeUtils.renderPrompt(promptMapper, PythonConstants.PYTHON_GENERATE,
 				Map.of("schema", state.value(GraphKeys.SCHEMA, String.class).orElse("无"), "main_query", mainQuery,
 						"task", PlanUtils.currentTaskOrFallback(objectMapper, state, "按计划完成本步分析"),
 						"sample_input", sampleInput(state), "retry_context", retryContext(state)));
 		String output = aiModelServiceFactory.getChatClient().prompt().user(user).call().content();
 		String code = NodeUtils.stripFence(output).trim();
 		log.info("Python 代码生成完成(第 {} 次尝试, {} 字符)", attempt, code.length());
-		return CompletableFuture.completedFuture(Map.of(PythonKeys.PYTHON_CODE, code, PythonKeys.PYTHON_ATTEMPT, attempt,
-				PythonKeys.PYTHON_FAIL_REASON, "", GraphKeys.PROGRESS, "Python 代码生成完成(第 " + attempt + " 次尝试)"));
+		return CompletableFuture.completedFuture(Map.of(GraphKeys.PYTHON_CODE, code, GraphKeys.PYTHON_RETRY_COUNT, attempt,
+				GraphKeys.PYTHON_FAIL_REASON, "", GraphKeys.PROGRESS, "Python 代码生成完成(第 " + attempt + " 次尝试)"));
 	}
 
 	/** 样例输入:最近一次 SQL 结果的前 5 行(含列名与总行数);无结果给"(无)" */
@@ -98,12 +97,12 @@ public class PythonGenerateNode implements AsyncNodeAction {
 
 	/** 重写上下文:失败原因 + 上次代码(带着原文改);首次为"(无)" */
 	private String retryContext(OverAllState state) {
-		String reason = state.value(PythonKeys.PYTHON_FAIL_REASON, String.class).orElse("");
+		String reason = state.value(GraphKeys.PYTHON_FAIL_REASON, String.class).orElse("");
 		if (!StringUtils.hasText(reason)) {
 			return "(无)";
 		}
 		String context = reason;
-		String lastCode = state.value(PythonKeys.PYTHON_CODE, String.class).orElse("");
+		String lastCode = state.value(GraphKeys.PYTHON_CODE, String.class).orElse("");
 		if (StringUtils.hasText(lastCode)) {
 			context += "\n\n[上次生成的代码]\n```python\n" + lastCode + "\n```";
 		}

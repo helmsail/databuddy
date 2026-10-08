@@ -12,7 +12,9 @@ import com.alibaba.cloud.ai.graph.StateGraph;
 import com.alibaba.cloud.ai.graph.action.AsyncNodeAction;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.helmsail.databuddy.middle.graph.GraphKeys;
-import com.helmsail.databuddy.middle.graph.GraphNodes;
+import com.helmsail.databuddy.middle.graph.python.PythonConstants;
+import com.helmsail.databuddy.middle.graph.report.ReportConstants;
+import com.helmsail.databuddy.middle.graph.review.ReviewConstants;
 import com.helmsail.databuddy.middle.graph.util.NodeUtils;
 
 import lombok.extern.slf4j.Slf4j;
@@ -40,7 +42,7 @@ public class PlanExecutorNode implements AsyncNodeAction {
 	public CompletableFuture<Map<String, Object>> apply(OverAllState state) {
 		// 人工确认闸:开启则先转确认节点(确认后开关被关掉,后续步不再拦)——闸在计划读取之前
 		if (Boolean.TRUE.equals(state.value(GraphKeys.HUMAN_REVIEW_ENABLED, false))) {
-			return CompletableFuture.completedFuture(Map.of(GraphKeys.PLAN_NEXT_NODE, GraphNodes.PLAN_REVIEW, GraphKeys.PROGRESS,
+			return CompletableFuture.completedFuture(Map.of(GraphKeys.PLAN_NEXT_NODE, ReviewConstants.PLAN_REVIEW, GraphKeys.PROGRESS,
 					"计划待确认:请确认后继续执行"));
 		}
 		String planJson = state.value(GraphKeys.PLAN_JSON, String.class).orElse("");
@@ -56,18 +58,18 @@ public class PlanExecutorNode implements AsyncNodeAction {
 						"轻档完成:SQL 已生成并执行"));
 			}
 			log.info("计划执行完成: 共 {} 步,转报告生成", size);
-			return CompletableFuture.completedFuture(Map.of(GraphKeys.PLAN_NEXT_NODE, GraphNodes.REPORT_GENERATOR,
+			return CompletableFuture.completedFuture(Map.of(GraphKeys.PLAN_NEXT_NODE, ReportConstants.REPORT_GENERATOR,
 					GraphKeys.PROGRESS, "计划执行完成:共 " + size + " 步,开始生成报告"));
 		}
 		PlanStep current = PlanUtils.stepAt(plan, step);
 		// 轻档校验:计划侧应只排 SQL 步;模型顶风排了 python 步则不执行,直接收束(保险丝,不丢已得结果)
-		if (light && GraphNodes.PYTHON_GENERATE.equals(current.getSelectGroup())) {
+		if (light && PythonConstants.PYTHON_GENERATE.equals(current.getSelectGroup())) {
 			log.info("轻档模式:第 {} 步为 Python 步,按约定不执行,直接收束", step);
 			return CompletableFuture.completedFuture(Map.of(GraphKeys.PLAN_NEXT_NODE, StateGraph.END, GraphKeys.PROGRESS,
 					"轻档完成:SQL 已生成并执行"));
 		}
 		log.info("派活: 第 {}/{} 步 → {}", step, size, current.getSelectGroup());
-		String groupText = GraphNodes.PYTHON_GENERATE.equals(current.getSelectGroup()) ? "Python 生成" : "SQL 生成";
+		String groupText = PythonConstants.PYTHON_GENERATE.equals(current.getSelectGroup()) ? "Python 生成" : "SQL 生成";
 		return CompletableFuture.completedFuture(Map.of(GraphKeys.PLAN_NEXT_NODE, current.getSelectGroup(), GraphKeys.PROGRESS,
 				"计划执行:第 " + step + "/" + size + " 步(" + groupText + ")"));
 	}

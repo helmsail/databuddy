@@ -5,7 +5,7 @@ import org.springframework.util.StringUtils;
 import com.alibaba.cloud.ai.graph.OverAllState;
 import com.alibaba.cloud.ai.graph.action.EdgeAction;
 import com.helmsail.databuddy.middle.graph.GraphKeys;
-import com.helmsail.databuddy.middle.graph.GraphNodes;
+import com.helmsail.databuddy.middle.graph.relation.RelationConstants;
 
 import static com.alibaba.cloud.ai.graph.StateGraph.END;
 
@@ -18,7 +18,7 @@ public class SchemaRecallDispatcher implements EdgeAction {
 	@Override
 	public String apply(OverAllState state) {
 		String terminated = state.value(GraphKeys.FINAL_ANSWER, String.class).orElse("");
-		return StringUtils.hasText(terminated) ? END : GraphNodes.TABLE_RELATION;
+		return StringUtils.hasText(terminated) ? END : RelationConstants.TABLE_RELATION;
 	}
 
 }

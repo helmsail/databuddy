@@ -19,7 +19,6 @@ import com.helmsail.databuddy.middle.bizdocument.AgentBizDocumentService;
 import com.helmsail.databuddy.middle.bizqa.AgentBizQaService;
 import com.helmsail.databuddy.middle.bizterm.AgentBizTermService;
 import com.helmsail.databuddy.middle.graph.GraphKeys;
-import com.helmsail.databuddy.middle.graph.GraphNodes;
 import com.helmsail.databuddy.middle.graph.util.NodeUtils;
 import com.helmsail.databuddy.middle.prompt.NodePromptTemplateMapper;
 import com.helmsail.databuddy.bottom.vectorize.RetrievedChunk;
@@ -85,7 +84,7 @@ public class KnowledgeRecallNode implements AsyncNodeAction {
 	/** 结合历史重写为独立查询;调用或输出失败(异常/不可解析/为空)回退原问题(检索仍可命中) */
 	private String rewrite(String input, String sessionMemory) {
 		try {
-			String user = NodeUtils.renderPrompt(promptMapper, GraphNodes.KNOWLEDGE_RECALL,
+			String user = NodeUtils.renderPrompt(promptMapper, KnowledgeConstants.KNOWLEDGE_RECALL,
 					Map.of("input", input, "session_memory", sessionMemory));
 			String output = aiModelServiceFactory.getChatClient().prompt().user(user).call().content();
 			JsonNode root = NodeUtils.parseJson(objectMapper, output);

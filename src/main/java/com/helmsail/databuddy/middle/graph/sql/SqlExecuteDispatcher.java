@@ -5,7 +5,7 @@ import org.springframework.util.StringUtils;
 import com.alibaba.cloud.ai.graph.OverAllState;
 import com.alibaba.cloud.ai.graph.action.EdgeAction;
 import com.helmsail.databuddy.middle.graph.GraphKeys;
-import com.helmsail.databuddy.middle.graph.GraphNodes;
+import com.helmsail.databuddy.middle.graph.plan.PlanConstants;
 
 import static com.alibaba.cloud.ai.graph.StateGraph.END;
 
@@ -21,11 +21,11 @@ public class SqlExecuteDispatcher implements EdgeAction {
 		if (StringUtils.hasText(termination)) {
 			return END;
 		}
-		String next = state.value(SqlKeys.SQL_NEXT, "hub");
+		String next = state.value(GraphKeys.SQL_NEXT, "hub");
 		return switch (next) {
 			case "end" -> END;
-			case "hub" -> GraphNodes.PLAN_EXECUTOR;
-			default -> GraphNodes.SQL_GENERATE;
+			case "hub" -> PlanConstants.PLAN_EXECUTOR;
+			default -> SqlConstants.SQL_GENERATE;
 		};
 	}
 
