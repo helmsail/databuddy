@@ -48,7 +48,7 @@ public class PlannerNode implements AsyncNodeAction {
 	@Observed(name = "node.planner", contextualName = "规划")
 	public CompletableFuture<Map<String, Object>> apply(OverAllState state) {
 		// 轻档(MCP):固定单步计划,不调 LLM
-		if (Boolean.TRUE.equals(state.value(GraphKeys.NL2SQL_MODE, false))) {
+		if (Boolean.TRUE.equals(state.value(GraphKeys.NL2SQL_ENABLED, false))) {
 			return CompletableFuture.completedFuture(lightPlan(state));
 		}
 		String canonical = state.value(GraphKeys.CANONICAL_QUERY, String.class)

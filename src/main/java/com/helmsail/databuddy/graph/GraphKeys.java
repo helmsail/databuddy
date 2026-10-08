@@ -125,8 +125,8 @@ public final class GraphKeys {
 	/** 当前步骤号(1 起;枢纽读,SQL 执行成功 / Python 分析完成时 +1) */
 	public static final String PLAN_STEP = "plan_step";
 
-	/** 人工确认开关(入口传参,默认关;挂起恢复后由确认节点关掉) */
-	public static final String PLAN_REVIEW_ENABLED = "plan_review_enabled";
+	/** 人工确认闸开关(入口传参,默认关;挂起恢复后由确认节点关掉) */
+	public static final String HUMAN_REVIEW_ENABLED = "human_review_enabled";
 
 	/** 人工确认决定(恢复时由 updateState 写入:{approved, feedback}) */
 	public static final String PLAN_REVIEW_DECISION = "plan_review_decision";
@@ -144,7 +144,7 @@ public final class GraphKeys {
 	public static final String PLAN_NEXT = "plan_next";
 
 	/** 轻档开关(NL2SQL 模式:MCP 入口传参;规划固定单步不调 LLM,走完跳过报告) */
-	public static final String NL2SQL_MODE = "nl2sql_mode";
+	public static final String NL2SQL_ENABLED = "nl2sql_enabled";
 
 	/** 当前生成的 SQL 文本(SQL 生成节点写;执行节点读) */
 	public static final String SQL_QUERY = "sql_query";

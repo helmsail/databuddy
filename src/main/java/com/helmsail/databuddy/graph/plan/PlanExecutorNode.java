@@ -56,14 +56,14 @@ public class PlanExecutorNode implements AsyncNodeAction {
 			}
 		}
 		// 人工确认闸:开启则先转确认节点(确认后开关被关掉,后续步不再拦)
-		if (Boolean.TRUE.equals(state.value(GraphKeys.PLAN_REVIEW_ENABLED, false))) {
+		if (Boolean.TRUE.equals(state.value(GraphKeys.HUMAN_REVIEW_ENABLED, false))) {
 			return CompletableFuture.completedFuture(Map.of(GraphKeys.PLAN_VALID, true, GraphKeys.PLAN_NEXT,
 					GraphKeys.PLAN_REVIEW, GraphKeys.NODE_STATUS, "计划待确认:请确认后继续执行"));
 		}
 		int size = plan.getExecutionPlan().size();
 		// 步数走完:轻档直接到终点(跳过报告,SQL 文本即结果);常规走报告固定收尾(计划里没有报告步)
 		if (step > size) {
-			if (Boolean.TRUE.equals(state.value(GraphKeys.NL2SQL_MODE, false))) {
+			if (Boolean.TRUE.equals(state.value(GraphKeys.NL2SQL_ENABLED, false))) {
 				log.info("轻档模式:计划执行完成(共 {} 步),直接收束", size);
 				return CompletableFuture.completedFuture(Map.of(GraphKeys.PLAN_VALID, true, GraphKeys.PLAN_NEXT,
 						StateGraph.END, GraphKeys.NODE_STATUS, "轻档完成:SQL 已生成并执行"));

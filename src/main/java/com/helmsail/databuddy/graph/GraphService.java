@@ -26,7 +26,8 @@ import reactor.core.scheduler.Schedulers;
 
 /**
  * 图的服务:只做执行编排,自建 sink 组装 SSE 流对外返回(入口错误帧/过程帧/收尾帧全在流内)。
- * 图由 GraphConfig 装配注入;本服务订阅图、组装事件(step 过程帧 / plan 计划帧 / sql 帧 / result 结果帧 / text 正文 / done / error)、登记执行线。
+ * 图由 GraphConfig 装配注入;本服务订阅图、编排事件与收尾时机(step / plan / sql / result / text / done / error 何时发,
+ * 帧形态与去重下沉 GraphThread / GraphSseEmitter)并登记执行线。
  * 线程键 = 官方 RunnableConfig.threadId(一线程一会话;值即业务侧会话键 sessionId):检查点挂在会话键下——
  * 跑完/停止/出错/开跑前释放、挂起轮保留(唯一例外,持久于库、跨重启有效)。
  * 挂起态与恢复全部走框架检查点:getState(next 含 PLAN_REVIEW = 挂起中)+ updateState(写决定)+ stream(null) 续跑,
@@ -73,8 +74,7 @@ public class GraphService {
 		GraphThread previous = registry.register(thread);
 		if (previous != null) {
 			log.info("同线程旧现场先停: threadId={}", resolved);
-			previous.stop();
-			previous.getSink().tryEmitComplete();
+			previous.terminate();
 		}
 		// 进图前的记忆读取、检查点释放与建流订阅都是阻塞活:整体挪到弹性线程,不占事件循环
 		Mono.fromRunnable(() -> start(thread, planReview))
@@ -100,8 +100,7 @@ public class GraphService {
 		GraphThread thread = registry.remove(sessionId);
 		if (thread != null) {
 			log.info("停止执行(图废弃): sessionId={}", sessionId);
-			thread.stop();
-			thread.getSink().tryEmitComplete();
+			thread.terminate();
 		}
 		// 挂起轮的取消一并在此:释放检查点(幂等,无检查点时零副作用);路径可能来自 Netty 事件循环,阻塞的 MySQL 往返挪到弹性线程
 		Mono.fromRunnable(() -> release(sessionId)).subscribeOn(Schedulers.boundedElastic()).subscribe();
@@ -136,11 +135,16 @@ public class GraphService {
 			return;
 		}
 		release(thread.getThreadId()); // 开跑前释放旧检查点(框架语义要求:防上轮未确认的挂起状态与新轮混写)
-		MemoryService.MemoryTexts texts = memory.buildContext(thread.getAgentId(), thread.getThreadId());
 		Map<String, Object> init = Map.of(GraphKeys.INPUT, thread.getInput(), GraphKeys.AGENT_ID, thread.getAgentId(),
-				GraphKeys.SESSION_MEMORY, texts.sessionMemory(), GraphKeys.AGENT_MEMORY, texts.agentMemory(),
-				GraphKeys.PLAN_REVIEW_ENABLED, planReview, GraphKeys.NL2SQL_MODE, thread.isNl2sqlMode());
+				GraphKeys.SESSION_MEMORY, memory.sessionMemory(thread.getThreadId()),
+				GraphKeys.AGENT_MEMORY, memory.agentMemory(thread.getAgentId()),
+				GraphKeys.HUMAN_REVIEW_ENABLED, planReview, GraphKeys.NL2SQL_ENABLED, thread.isNl2sqlMode());
 		Flux<NodeOutput> outputs = graph.stream(init, RunnableConfig.builder().threadId(thread.getThreadId()).build());
+		subscribe(thread, outputs);
+	}
+
+	/** 订阅图输出(公共接线):过程/失败/收尾三回调挂上,订阅句柄回填现场(停止时可掐);订阅调度到弹性线程 */
+	private void subscribe(GraphThread thread, Flux<NodeOutput> outputs) {
 		Disposable disposable = outputs.subscribeOn(Schedulers.boundedElastic())
 			.subscribe(output -> onOutput(thread, output), error -> onError(thread, error), () -> onComplete(thread));
 		thread.setDisposable(disposable);
@@ -197,10 +201,7 @@ public class GraphService {
 			return;
 		}
 		log.info("从断点恢复执行: threadId={}, approved={}", thread.getThreadId(), approved);
-		Flux<NodeOutput> outputs = graph.stream(null, config);
-		Disposable disposable = outputs.subscribeOn(Schedulers.boundedElastic())
-			.subscribe(output -> onOutput(thread, output), error -> onError(thread, error), () -> onComplete(thread));
-		thread.setDisposable(disposable);
+		subscribe(thread, graph.stream(null, config));
 	}
 
 	private void onOutput(GraphThread thread, NodeOutput output) {
@@ -208,31 +209,13 @@ public class GraphService {
 			return; // START 帧无内容,不对外
 		}
 		if (output.isEND()) {
-			String answer = output.state().value(GraphKeys.FINAL_ANSWER, String.class).orElse(null);
-			if (StringUtils.hasText(answer)) {
-				thread.setFinalAnswer(answer);
-			}
+			thread.collectAnswer(output.state().value(GraphKeys.FINAL_ANSWER, String.class).orElse(null)); // 记录最终回复
 			return;
 		}
-		GraphSseEmitter frames = thread.getFrames();
-		// 中间节点完成:写有过程状态(NODE_STATUS)的节点推一条 step 帧(轻量过程播报;同一状态只播一次)
-		String note = output.state().value(GraphKeys.NODE_STATUS, String.class).orElse(null);
-		if (StringUtils.hasText(note) && !note.equals(thread.getLastStep())) {
-			thread.setLastStep(note);
-			frames.step(output.node(), note);
-		}
-		// SQL 帧:新生成/重写的 SQL(去重后下发,text = SQL 文本)
-		String sql = output.state().value(GraphKeys.SQL_QUERY, String.class).orElse(null);
-		if (StringUtils.hasText(sql) && !sql.equals(thread.getLastSql())) {
-			thread.setLastSql(sql);
-			frames.sql(output.node(), sql);
-		}
-		// 结果帧:最近一次 SQL 执行结果(去重后下发,text = 契约 JSON)
-		String result = output.state().value(GraphKeys.SQL_RESULT, String.class).orElse(null);
-		if (StringUtils.hasText(result) && !result.equals(thread.getLastResult())) {
-			thread.setLastResult(result);
-			frames.result(output.node(), result);
-		}
+		// 中间节点完成:过程状态 / SQL / 结果三帧(空判与去重都在现场内)
+		thread.step(output.node(), output.state().value(GraphKeys.NODE_STATUS, String.class).orElse(null));
+		thread.sql(output.node(), output.state().value(GraphKeys.SQL_QUERY, String.class).orElse(null));
+		thread.result(output.node(), output.state().value(GraphKeys.SQL_RESULT, String.class).orElse(null));
 	}
 
 	private void onComplete(GraphThread thread) {
@@ -245,16 +228,10 @@ public class GraphService {
 			return;
 		}
 		release(thread.getThreadId());
-		GraphSseEmitter frames = thread.getFrames();
-		String answer = thread.getFinalAnswer();
-		if (StringUtils.hasText(answer)) {
-			frames.text(answer); // 最终回复整段播报
-		}
-		frames.done();
-		thread.getSink().tryEmitComplete();
+		thread.finish(); // 正常收尾:最终回复(有则整段播报)+ done 帧 + 收束
 		// done 已送出:慢活(必要时的 AI 压缩)在这一步,不挡用户;轻档(MCP)不收尾回写
 		if (!thread.isNl2sqlMode()) {
-			memory.addTurn(thread.getThreadId(), thread.getInput(), answer);
+			memory.addTurn(thread.getThreadId(), thread.getInput(), thread.getFinalAnswer());
 		}
 	}
 
@@ -283,10 +260,7 @@ public class GraphService {
 		}
 		String planJson = snapshot.state().value(GraphKeys.PLAN_JSON, String.class).orElse("");
 		log.info("执行挂起(计划待确认): threadId={}, next={}", thread.getThreadId(), snapshot.next());
-		GraphSseEmitter frames = thread.getFrames();
-		frames.plan(planJson);
-		frames.done();
-		thread.getSink().tryEmitComplete();
+		thread.suspend(planJson); // 挂起收尾:plan 帧 + done 帧 + 收束(检查点不动 = 保留待恢复)
 		// 记忆:用户看到了什么就记什么(计划摘要入上文,确认后下一轮不困惑);轻档不回写(防御:轻档流不派向中断点)
 		if (!thread.isNl2sqlMode()) {
 			memory.addTurn(thread.getThreadId(), thread.getInput(), "【待确认的执行计划】\n" + planJson);
@@ -301,8 +275,7 @@ public class GraphService {
 		}
 		log.error("执行失败: threadId={}", thread.getThreadId(), error);
 		String message = StringUtils.hasText(error.getMessage()) ? error.getMessage() : "执行失败";
-		thread.getFrames().error(message);
-		thread.getSink().tryEmitComplete();
+		thread.abort(message);
 		// 失败轮不写记忆,记忆保持干净
 	}
 

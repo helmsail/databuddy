@@ -15,7 +15,7 @@ import lombok.extern.slf4j.Slf4j;
 
 /**
  * 记忆服务:memory 包唯一入口——两类记忆、两张表(表只存,策略全在此)。
- * 读:buildContext 一次取齐两段(会话记忆 + agent 沉淀清单)供进图前注入;写与清分属各自记忆,方法分开。
+ * 读:sessionMemory / agentMemory 两段各取(进图前注入);写与清分属各自记忆,方法分开。
  * ①会话记忆(session_memory 单表:一行 = 一段自带标识的文本——"用户: …" / "助手: …" / 摘要行"【此前对话摘要】…",
  *   数据侧无任何行类型概念):跨图运行的会话上下文。
  *   写:成功收尾追加"用户 / 助手"两行,超窗(20 条消息)即压缩——最老若干行(含旧摘要行,若有)交给 LLM 合并成一行摘要,写回最老行、删其余;
@@ -70,15 +70,32 @@ public class MemoryService {
 		this.transactionTemplate = new TransactionTemplate(transactionManager);
 	}
 
-	// ============ 读取:进图前两段一次取齐(会话记忆 + agent 沉淀清单) ============
+	// ============ 读取(进图前注入):会话记忆 / agent 沉淀清单 ============
 
-	/** 进图前的两段记忆文本:sessionMemory = 会话记忆(历史轮次 + 压缩摘要),agentMemory = agent 沉淀清单 */
-	public record MemoryTexts(String sessionMemory, String agentMemory) {
+	/** 会话记忆文本:全部行按顺序拼接("用户: …" / "助手: …" / 摘要行);无会话 / 无语录返回 "(无)" */
+	public String sessionMemory(String sessionId) {
+		if (!StringUtils.hasText(sessionId)) {
+			return "(无)";
+		}
+		List<String> lines = sessionMapper.selectBySession(sessionId)
+			.stream()
+			.map(SessionMemory::getContent)
+			.toList();
+		return lines.isEmpty() ? "(无)" : String.join("\n", lines);
 	}
 
-	/** 进图前:会话记忆 + agent 清单一次取齐;sessionId 为 null(轻档流无会话)时会话段为 "(无)" */
-	public MemoryTexts buildContext(long agentId, String sessionId) {
-		return new MemoryTexts(renderSession(sessionId), renderAgentMemo(agentId));
+	/** agent 沉淀清单文本:每行 "序号. [id=主键] 内容";无沉淀返回 "(无)" */
+	public String agentMemory(long agentId) {
+		List<AgentMemory> rows = agentMapper.selectByAgent(agentId);
+		if (rows.isEmpty()) {
+			return "(无)";
+		}
+		StringBuilder text = new StringBuilder();
+		int index = 1;
+		for (AgentMemory row : rows) {
+			text.append(index++).append(". [id=").append(row.getId()).append("] ").append(row.getContent()).append('\n');
+		}
+		return text.toString().trim();
 	}
 
 	// ============ 会话记忆(写 / 清) ============
@@ -169,32 +186,6 @@ public class MemoryService {
 	}
 
 	// ============ 私有实现 ============
-
-	/** 会话上文:全部行按顺序拼接;无会话 / 无语录返回 "(无)" */
-	private String renderSession(String sessionId) {
-		if (!StringUtils.hasText(sessionId)) {
-			return "(无)";
-		}
-		List<String> lines = sessionMapper.selectBySession(sessionId)
-			.stream()
-			.map(SessionMemory::getContent)
-			.toList();
-		return lines.isEmpty() ? "(无)" : String.join("\n", lines);
-	}
-
-	/** agent 清单文本:每行 "序号. [id=主键] 内容";无沉淀返回 "(无)" */
-	private String renderAgentMemo(long agentId) {
-		List<AgentMemory> rows = agentMapper.selectByAgent(agentId);
-		if (rows.isEmpty()) {
-			return "(无)";
-		}
-		StringBuilder text = new StringBuilder();
-		int index = 1;
-		for (AgentMemory row : rows) {
-			text.append(index++).append(". [id=").append(row.getId()).append("] ").append(row.getContent()).append('\n');
-		}
-		return text.toString().trim();
-	}
 
 	/** 追加一行("用户: …" / "助手: …" / 摘要行) */
 	private void append(String sessionId, String content) {
