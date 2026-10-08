@@ -68,14 +68,14 @@ public class SqlExecuteNode implements AsyncNodeAction {
 					"无法定位分析目标库(智能体未绑定数据表,或数据表跨多个库无法判定),本轮分析无法继续。", GraphKeys.PROGRESS,
 					"SQL 执行终止:无法定位目标库"));
 		}
-		int step = NodeUtils.intOf(state, GraphKeys.PLAN_STEP, 1);
+		int step = NodeUtils.intOf(state, GraphKeys.PLAN_STEP_NO, 1);
 		try {
 			TableData data = bizDatabaseService.executeQuery(target.configId(), sql);
 			String resultJson = resultJson(step, sql, data);
 			Map<String, String> results = PlanUtils.withEntry(stepResults(state), "step_" + step, resultJson);
 			log.info("SQL 执行成功: 第 {} 步, {} 行", step, data.getRows().size());
 			return CompletableFuture.completedFuture(Map.of(GraphKeys.SQL_RESULT, resultJson, GraphKeys.STEP_RESULTS, results,
-					GraphKeys.PLAN_STEP, step + 1, SqlKeys.SQL_ATTEMPT, 0, SqlKeys.SQL_REPAIR_REASON, "",
+					GraphKeys.PLAN_STEP_NO, step + 1, SqlKeys.SQL_ATTEMPT, 0, SqlKeys.SQL_REPAIR_REASON, "",
 					SqlKeys.SQL_NEXT, "hub", GraphKeys.PROGRESS, "SQL 执行完成:" + data.getRows().size() + " 行结果"));
 		}
 		catch (RuntimeException e) {

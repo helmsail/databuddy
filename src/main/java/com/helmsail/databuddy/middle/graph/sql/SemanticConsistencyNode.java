@@ -15,7 +15,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.helmsail.databuddy.bottom.aimodel.AiModelServiceFactory;
 import com.helmsail.databuddy.middle.biztable.AgentBizTableService;
 import com.helmsail.databuddy.middle.graph.GraphKeys;
-import com.helmsail.databuddy.middle.graph.plan.PlanStep;
+import com.helmsail.databuddy.middle.graph.GraphNodes;
 import com.helmsail.databuddy.middle.graph.plan.PlanUtils;
 import com.helmsail.databuddy.middle.graph.util.NodeUtils;
 import com.helmsail.databuddy.middle.prompt.NodePromptTemplateMapper;
@@ -51,22 +51,23 @@ public class SemanticConsistencyNode implements AsyncNodeAction {
 	@Override
 	@Observed(name = "node.semanticConsistency", contextualName = "语义一致性")
 	public CompletableFuture<Map<String, Object>> apply(OverAllState state) {
-		String sql = state.value(GraphKeys.SQL_QUERY, String.class).orElse("");
-		if (!StringUtils.hasText(sql)) {
+		String sqlQuery = state.value(GraphKeys.SQL_QUERY, String.class).orElse("");
+		if (!StringUtils.hasText(sqlQuery)) {
 			log.warn("语义一致性收到空 SQL,打回生成");
 			return CompletableFuture.completedFuture(Map.of(SqlKeys.SEMANTIC_PASSED, false, SqlKeys.SQL_REPAIR_REASON,
 					"SQL 为空", GraphKeys.PROGRESS, "语义一致性未通过:SQL 为空"));
 		}
+		String mainQuery = state.value(GraphKeys.MAIN_QUERY, String.class)
+			.orElse(state.value(GraphKeys.INPUT, String.class).orElse(""));
 		long agentId = NodeUtils.longOf(state, GraphKeys.AGENT_ID);
 		AgentBizTableService.DatabaseTarget target = tableService.databaseTargetOf(agentId,
 				NodeUtils.stringList(state, GraphKeys.RECALLED_TABLES));
 		String dialect = target == null ? "MySQL" : target.dialect();
-		String canonical = state.value(GraphKeys.MAIN_QUERY, String.class)
-			.orElse(state.value(GraphKeys.INPUT, String.class).orElse(""));
-		String user = NodeUtils.renderPrompt(promptMapper, GraphKeys.SEMANTIC_CONSISTENCY,
-				Map.of("dialect", dialect, "instruction", currentInstruction(state), "sql", sql, "schema",
-						state.value(GraphKeys.SCHEMA, String.class).orElse("无"), "knowledge",
-						state.value(GraphKeys.KNOWLEDGE, String.class).orElse("无"), "canonical_query", canonical));
+		String user = NodeUtils.renderPrompt(promptMapper, GraphNodes.SEMANTIC_CONSISTENCY,
+				Map.of("dialect", dialect, "task", PlanUtils.currentTaskOrFallback(objectMapper, state, "无"),
+						"sql_query", sqlQuery, "schema", state.value(GraphKeys.SCHEMA, String.class).orElse("无"),
+						"knowledge", state.value(GraphKeys.KNOWLEDGE, String.class).orElse("无"), "main_query",
+						mainQuery));
 		return CompletableFuture.completedFuture(assess(user));
 	}
 
@@ -87,19 +88,6 @@ public class SemanticConsistencyNode implements AsyncNodeAction {
 		catch (RuntimeException e) {
 			log.warn("语义一致性校验调用或解析失败,按通过放行: {}", e.getMessage());
 			return Map.of(SqlKeys.SEMANTIC_PASSED, true, GraphKeys.PROGRESS, "语义一致性校验回退:未能判定,按通过继续");
-		}
-	}
-
-	/** 读计划当前步指令(防御性解析;解析不了按"无",不挡质检) */
-	private String currentInstruction(OverAllState state) {
-		try {
-			String planJson = state.value(GraphKeys.PLAN_JSON, String.class).orElse("");
-			int step = NodeUtils.intOf(state, GraphKeys.PLAN_STEP, 1);
-			PlanStep current = PlanUtils.stepAt(PlanUtils.parse(objectMapper, planJson), step);
-			return StringUtils.hasText(current.getInstruction()) ? current.getInstruction() : "无";
-		}
-		catch (RuntimeException e) {
-			return "无";
 		}
 	}
 

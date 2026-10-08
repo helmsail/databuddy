@@ -18,6 +18,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.helmsail.databuddy.bottom.aimodel.AiModelServiceFactory;
 import com.helmsail.databuddy.middle.graph.GraphKeys;
+import com.helmsail.databuddy.middle.graph.GraphNodes;
 import com.helmsail.databuddy.middle.graph.util.NodeUtils;
 import com.helmsail.databuddy.middle.prompt.NodePromptTemplateMapper;
 
@@ -53,9 +54,9 @@ public class QueryEnhanceNode implements AsyncNodeAction {
 	public CompletableFuture<Map<String, Object>> apply(OverAllState state) {
 		String input = state.value(GraphKeys.INPUT, String.class).orElse("");
 		String knowledge = state.value(GraphKeys.KNOWLEDGE, String.class).orElse("无");
-		String history = state.value(GraphKeys.SESSION_MEMORY, String.class).orElse("(无)");
-		String user = NodeUtils.renderPrompt(promptMapper, GraphKeys.QUERY_ENHANCE,
-				Map.of("query", input, "knowledge", knowledge, "history", history,
+		String sessionMemory = state.value(GraphKeys.SESSION_MEMORY, String.class).orElse("(无)");
+		String user = NodeUtils.renderPrompt(promptMapper, GraphNodes.QUERY_ENHANCE,
+				Map.of("input", input, "knowledge", knowledge, "session_memory", sessionMemory,
 						"current_time", LocalDateTime.now().format(TIME_FORMAT)));
 		return CompletableFuture.completedFuture(parse(input, user));
 	}
@@ -65,12 +66,12 @@ public class QueryEnhanceNode implements AsyncNodeAction {
 		try {
 			String output = aiModelServiceFactory.getChatClient().prompt().user(user).call().content();
 			JsonNode root = NodeUtils.parseJson(objectMapper, output);
-			String canonical = root.path("canonical_query").asText("");
-			if (StringUtils.hasText(canonical)) {
-				List<String> expanded = strings(root.path("expanded_queries"));
-				log.info("查询增强: 主查询=\"{}\", 备用查询 {} 条", canonical, expanded.size());
-				return Map.of(GraphKeys.MAIN_QUERY, canonical, GraphKeys.BACKUP_QUERIES, expanded,
-						GraphKeys.PROGRESS, "查询增强完成:备用查询 " + expanded.size() + " 条");
+			String mainQuery = root.path("main_query").asText("");
+			if (StringUtils.hasText(mainQuery)) {
+				List<String> backupQueries = strings(root.path("backup_queries"));
+				log.info("查询增强: 主查询=\"{}\", 备用查询 {} 条", mainQuery, backupQueries.size());
+				return Map.of(GraphKeys.MAIN_QUERY, mainQuery, GraphKeys.BACKUP_QUERIES, backupQueries,
+						GraphKeys.PROGRESS, "查询增强完成:备用查询 " + backupQueries.size() + " 条");
 			}
 			log.warn("查询增强未产出有效查询,回退原问题: {}", NodeUtils.brief(output));
 		}

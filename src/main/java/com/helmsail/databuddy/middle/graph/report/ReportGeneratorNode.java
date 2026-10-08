@@ -14,6 +14,7 @@ import com.alibaba.cloud.ai.graph.action.AsyncNodeAction;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.helmsail.databuddy.bottom.aimodel.AiModelServiceFactory;
 import com.helmsail.databuddy.middle.graph.GraphKeys;
+import com.helmsail.databuddy.middle.graph.GraphNodes;
 import com.helmsail.databuddy.middle.graph.plan.Plan;
 import com.helmsail.databuddy.middle.graph.plan.PlanStep;
 import com.helmsail.databuddy.middle.graph.plan.PlanUtils;
@@ -55,11 +56,11 @@ public class ReportGeneratorNode implements AsyncNodeAction {
 	@Override
 	@Observed(name = "node.reportGenerator", contextualName = "报告生成")
 	public CompletableFuture<Map<String, Object>> apply(OverAllState state) {
-		String canonical = state.value(GraphKeys.MAIN_QUERY, String.class)
+		String mainQuery = state.value(GraphKeys.MAIN_QUERY, String.class)
 			.orElse(state.value(GraphKeys.INPUT, String.class).orElse(""));
-		String memory = state.value(GraphKeys.AGENT_MEMORY, String.class).orElse("(无)");
-		String user = NodeUtils.renderPrompt(promptMapper, GraphKeys.REPORT_GENERATOR, Map.of("canonical_query", canonical,
-				"plan_summary", planSummary(state), "results", resultsText(state), "agent_memory", memory));
+		String agentMemory = state.value(GraphKeys.AGENT_MEMORY, String.class).orElse("(无)");
+		String user = NodeUtils.renderPrompt(promptMapper, GraphNodes.REPORT_GENERATOR, Map.of("main_query", mainQuery,
+				"plan_summary", planSummary(state), "step_results", resultsText(state), "agent_memory", agentMemory));
 		long agentId = NodeUtils.longOf(state, GraphKeys.AGENT_ID);
 		String report = aiModelServiceFactory.getChatClient()
 			.prompt()
@@ -77,19 +78,19 @@ public class ReportGeneratorNode implements AsyncNodeAction {
 				"报告生成完成"));
 	}
 
-	/** 计划摘要:思路 + 各步指令(解析失败给原始 JSON 摘要) */
+	/** 计划摘要:标题 + 各步任务(解析失败给原始 JSON 摘要) */
 	private String planSummary(OverAllState state) {
 		String planJson = state.value(GraphKeys.PLAN_JSON, String.class).orElse("");
 		try {
 			Plan plan = PlanUtils.parse(objectMapper, planJson);
 			StringBuilder summary = new StringBuilder();
-			if (StringUtils.hasText(plan.getThoughtProcess())) {
-				summary.append("分析思路: ").append(plan.getThoughtProcess()).append('\n');
+			if (StringUtils.hasText(plan.getPlanTitle())) {
+				summary.append("计划标题: ").append(plan.getPlanTitle()).append('\n');
 			}
 			int index = 1;
-			for (PlanStep step : plan.getExecutionPlan()) {
-				summary.append("- 第 ").append(index++).append(" 步(").append(step.getToolToUse()).append("): ")
-					.append(step.getInstruction()).append('\n');
+			for (PlanStep step : plan.getPlanSteps()) {
+				summary.append("- 第 ").append(index++).append(" 步(").append(step.getSelectGroup()).append("): ")
+				.append(step.getTask()).append('\n');
 			}
 			return summary.toString().trim();
 		}

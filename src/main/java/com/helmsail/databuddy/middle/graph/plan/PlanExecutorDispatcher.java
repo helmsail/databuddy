@@ -1,7 +1,5 @@
 package com.helmsail.databuddy.middle.graph.plan;
 
-import org.springframework.util.StringUtils;
-
 import com.alibaba.cloud.ai.graph.OverAllState;
 import com.alibaba.cloud.ai.graph.action.EdgeAction;
 import com.helmsail.databuddy.middle.graph.GraphKeys;
@@ -9,23 +7,13 @@ import com.helmsail.databuddy.middle.graph.GraphKeys;
 import static com.alibaba.cloud.ai.graph.StateGraph.END;
 
 /**
- * 计划执行枢纽的出边分流器:三种去向——
- * 写了终止语(重写超限)→ 终点;计划校验通过 → 按 PLAN_NEXT 派活(节点 ID 在装配侧声明);
- * 校验不过 → 回规划节点重写
+ * 计划执行枢纽的出边分流器:按下一跳 PLAN_NEXT_NODE 走(枢纽每次必写:确认闸 / SQL 组 / Python 组 / 报告 / 终点)
  */
 public class PlanExecutorDispatcher implements EdgeAction {
 
 	@Override
 	public String apply(OverAllState state) {
-		String termination = state.value(GraphKeys.FINAL_ANSWER, String.class).orElse("");
-		if (StringUtils.hasText(termination)) {
-			return END;
-		}
-		boolean valid = state.value(GraphKeys.PLAN_VALID, false);
-		if (valid) {
-			return state.value(GraphKeys.PLAN_NEXT, END);
-		}
-		return GraphKeys.PLANNER;
+		return state.value(GraphKeys.PLAN_NEXT_NODE, END);
 	}
 
 }

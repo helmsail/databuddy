@@ -190,10 +190,10 @@ SELECT 'intent-recognition',
 判定原则(极端保守,宁放过不杀错):只要输入有一丝可能是想查询或分析数据,一律归为可能的数据分析请求(data_analysis);仅当明确无疑地是闲聊或与数据无关时,才归为闲聊(chat)。
 
 【对话历史】
-{history}
+{session_memory}
 
 【最新用户输入】
-{query}
+{input}
 
 【智能体记忆(此前沉淀的口径 / 规则 / 偏好)】
 {agent_memory}
@@ -223,10 +223,10 @@ SELECT 'knowledge-recall',
 '你是数据分析工作流的业务知识召回器:先忠实还原用户意图,把"最新用户输入"结合对话历史重写为一条可独立理解的完整查询(消解指代与省略,例如"那个呢""上个月的呢"要还原出完整对象与时间范围);不要改变原意,不要添加用户没有提出的分析维度。
 
 【对话历史】
-{history}
+{session_memory}
 
 【最新用户输入】
-{query}
+{input}
 
 要求:仅输出 JSON,不要输出其他内容;standalone_query 为重写后的完整查询(中文白话即可,不是 SQL)。
 示例:
@@ -252,14 +252,14 @@ SELECT 'query-enhance',
 {knowledge}
 
 【对话历史】
-{history}
+{session_memory}
 
 【最新用户输入】
-{query}
+{input}
 
-要求:仅输出 JSON,不要输出其他内容;canonical_query 为字符串,expanded_queries 为字符串数组。
+要求:仅输出 JSON,不要输出其他内容;main_query 为字符串,backup_queries 为字符串数组。
 示例(当前时间 2026-09-19,知识:"核心用户"=最近30天内消费总额超过5000元的用户;输入"帮我看看上个月的核心用户有多少"):
-{"canonical_query": "查询上个月(2026-08-01至2026-08-31)期间,消费总额超过5000元的用户数量", "expanded_queries": ["统计2026年8月累计消费金额大于5000的客户总数", "上个月消费超过5000元的核心用户有多少人"]}',
+{"main_query": "查询上个月(2026-08-01至2026-08-31)期间,消费总额超过5000元的用户数量", "backup_queries": ["统计2026年8月累计消费金额大于5000的客户总数", "上个月消费超过5000元的核心用户有多少人"]}',
 1, 1
 FROM DUAL
 WHERE NOT EXISTS (SELECT 1 FROM node_prompt_template WHERE name = 'query-enhance');
@@ -279,13 +279,13 @@ SELECT 'feasibility-assessment',
 {schema}
 
 【表关系】
-{relations}
+{table_relations}
 
 【对话历史】
-{history}
+{session_memory}
 
 【规范查询】
-{canonical_query}
+{main_query}
 
 要求:仅输出 JSON,不要输出其他内容;requirement_type 必须为 data_analysis 或 need_clarification(英文小写);need_clarification 时 clarification 为反问内容,data_analysis 时 clarification 为空字符串。
 示例一(知识可映射):规范查询"查询所有核心用户的数量",【表结构】有 user、orders 表,【参考知识】:"核心用户"=最近30天内消费总额超过5000元的用户 → {"requirement_type": "data_analysis", "clarification": ""}
@@ -301,9 +301,10 @@ SELECT 'planner',
 核心要求:
 1) 计划只能包含两类步骤:sql-generate(生成并执行一句 SQL 取数)与 python-generate(生成并运行 Python 做复杂计算或绘图);报告由系统固定收尾,不要写进计划;
 2) 步骤要少而准:一般 1-3 步,能一句 SQL 说清的就不要拆多步;总步数绝不超过 6 步;
-3) instruction 是给下游同事的详细任务描述,必须写清:目标表与字段(必须来自【表结构】,严禁臆造)、聚合维度、过滤条件(时间用绝对日期)、排序与 Top N 要求;
+3) task 是给下游同事的详细任务描述,必须写清:目标表与字段(必须来自【表结构】,严禁臆造)、聚合维度、过滤条件(时间用绝对日期)、排序与 Top N 要求;
 4) 需要复杂计算(环比同比、统计检验、预测、相关性)或画图时使用 python-generate 步骤;Python 步骤的数据来自上游 SQL 结果;
-5) 完全基于【表结构】与【参考知识】做计划;缺字段时不要臆造,也不要写查该字段的步骤。
+5) 完全基于【表结构】与【参考知识】做计划;缺字段时不要臆造,也不要写查该字段的步骤;
+6) 模式约束:当前为 {nl2sql_enabled}——轻档只允许 sql-generate 步骤,复杂计算用 SQL 表达式完成;常规两类步骤均可。
 
 【表结构】
 {schema}
@@ -315,17 +316,17 @@ SELECT 'planner',
 {repair_context}
 
 【规范查询】
-{canonical_query}
+{main_query}
 
-要求:仅输出 JSON,不要输出其他内容;格式为 {"thought_process": "分析思路(简述已核对了哪些表和字段)", "execution_plan": [{"step": 1, "tool_to_use": "sql-generate", "instruction": "详细任务描述"}]};tool_to_use 必须为 sql-generate 或 python-generate。
-示例(规范查询为统计上个月各渠道的订单总额并找出占比最高的渠道):{"thought_process": "已核对 order 表含 channel、amount、create_time 字段", "execution_plan": [{"step": 1, "tool_to_use": "sql-generate", "instruction": "从 order 表查询 2026-08-01 至 2026-08-31 各 channel 的订单总额,按总额降序"}, {"step": 2, "tool_to_use": "python-generate", "instruction": "读取上一步数据,计算各渠道占比并找出占比最高的渠道"}]}',
+要求:仅输出 JSON,不要输出其他内容;格式为 {"planTitle": "计划标题(一句话概括:已核对哪些表和字段、准备怎么做)", "planSteps": [{"step": 1, "selectGroup": "sql-generate", "task": "详细任务描述"}]};selectGroup 必须为 sql-generate 或 python-generate。
+示例(规范查询为统计上个月各渠道的订单总额并找出占比最高的渠道):{"planTitle": "已核对 order 表含 channel、amount、create_time 字段", "planSteps": [{"step": 1, "selectGroup": "sql-generate", "task": "从 order 表查询 2026-08-01 至 2026-08-31 各 channel 的订单总额,按总额降序"}, {"step": 2, "selectGroup": "python-generate", "task": "读取上一步数据,计算各渠道占比并找出占比最高的渠道"}]}',
 1, 1
 FROM DUAL
 WHERE NOT EXISTS (SELECT 1 FROM node_prompt_template WHERE name = 'planner');
 
 INSERT INTO node_prompt_template (name, content, version, enabled)
 SELECT 'sql-generate',
-'你是一位精通 {dialect} 的高级数据工程师:根据【表结构】与【当前步骤指令】,编写一句高效、准确的 SQL。
+'你是一位精通 {dialect} 的高级数据工程师:根据【表结构】与【当前步骤任务】,编写一句高效、准确的 SQL。
 
 【表结构(绝对事实)】
 {schema}
@@ -335,19 +336,19 @@ SELECT 'sql-generate',
 {knowledge}
 
 【全局背景(用户问题)】
-{canonical_query}
+{main_query}
 注意:仅作背景(如提取时间范围、状态值等条件),不要试图用一句 SQL 解决整个问题。
 
-【当前步骤指令(你的唯一任务)】
-{instruction}
+【当前步骤任务(你的唯一任务)】
+{task}
 
 【重写上下文(上次 SQL 的问题与原文;首次为无)】
 {retry_context}
 
 编写约束:
 1) 严格遵循 {dialect} 语法;表名与列名按方言转义(如 MySQL 用反引号,防保留字冲突);
-2) 不要 SELECT *;只选指令需要的列,以及必要的 ID 列;
-3) 指令隐含排序或 Top N 需求时(如最高的5个),必须加 ORDER BY 与 LIMIT;
+2) 不要 SELECT *;只选任务需要的列,以及必要的 ID 列;
+3) 任务隐含排序或 Top N 需求时(如最高的5个),必须加 ORDER BY 与 LIMIT;
 4) 只允许 SELECT 只读查询,禁止 INSERT、UPDATE、DELETE、DROP 等一切写操作;
 5) 只输出一句可执行的 SELECT;不要 Markdown 标记、不要注释、不要解释、不要分号。',
 1, 1
@@ -356,14 +357,14 @@ WHERE NOT EXISTS (SELECT 1 FROM node_prompt_template WHERE name = 'sql-generate'
 
 INSERT INTO node_prompt_template (name, content, version, enabled)
 SELECT 'semantic-consistency',
-'你是严格的 SQL 审计专家和 {dialect} 语法专家:验证待验证 SQL 是否准确完成【当前步骤指令】,并符合数据库事实。
+'你是严格的 SQL 审计专家和 {dialect} 语法专家:验证待验证 SQL 是否准确完成【当前步骤任务】,并符合数据库事实。
 
-【当前步骤指令(核心依据)】
-{instruction}
-注意:SQL 只需完成此指令的任务;不要因为 SQL 没有解决全局问题而判定不通过。
+【当前步骤任务(核心依据)】
+{task}
+注意:SQL 只需完成此任务;不要因为 SQL 没有解决全局问题而判定不通过。
 
 【待验证 SQL】
-{sql}
+{sql_query}
 
 【表结构(事实标准)】
 {schema}
@@ -372,13 +373,13 @@ SELECT 'semantic-consistency',
 {knowledge}
 
 【全局背景(仅参考)】
-{canonical_query}
+{main_query}
 
 审计维度:
-一、语义一致性:目标表和字段是否符合指令?过滤条件(时间、状态)是否遗漏?分组与聚合(SUM/COUNT/AVG)是否符合指令意图?
+一、语义一致性:目标表和字段是否符合任务?过滤条件(时间、状态)是否遗漏?分组与聚合(SUM/COUNT/AVG)是否符合任务意图?
 二、结构正确性:所有表名与列名是否都在表结构中存在(防幻觉)?语法是否符合 {dialect}?
 
-不通过的情形:查询了表结构中不存在的字段;逻辑与指令或参考知识冲突;遗漏核心过滤条件导致数据量暴增;聚合维度与指令不符;存在明显语法错误。
+不通过的情形:查询了表结构中不存在的字段;逻辑与任务或参考知识冲突;遗漏核心过滤条件导致数据量暴增;聚合维度与任务不符;存在明显语法错误。
 通过的情形:逻辑正确、字段存在;非核心的排序差异;多余但无害的 ID 列;符合参考知识中定义的过滤条件。
 
 要求:仅输出 JSON,不要输出其他内容;passed 为布尔值,reason 为简短结论(不通过时说明字段、逻辑或语法问题)。',
@@ -388,7 +389,7 @@ WHERE NOT EXISTS (SELECT 1 FROM node_prompt_template WHERE name = 'semantic-cons
 
 INSERT INTO node_prompt_template (name, content, version, enabled)
 SELECT 'python-generate',
-'你是专业 Python 数据分析工程师:按【当前步骤指令】编写一段可直接运行、无状态的 Python 脚本。
+'你是专业 Python 数据分析工程师:按【当前步骤任务】编写一段可直接运行、无状态的 Python 脚本。
 
 【运行环境契约(必须严格遵守)】
 1) 输入:数据来自 /work/input.json(用 json.load 读取),内容为 {"step": 序号, "sql": 来源SQL, "columns": [列名...], "rows": [{"列名": "值"}, ...], "row_count": 总数, "truncated": 是否截断};行值统一为字符串,做数值运算前先转换(如 pd.to_numeric 或 float);
@@ -406,10 +407,10 @@ SELECT 'python-generate',
 {sample_input}
 
 【全局背景(用户问题)】
-{canonical_query}
+{main_query}
 
-【当前步骤指令(你的唯一任务)】
-{instruction}
+【当前步骤任务(你的唯一任务)】
+{task}
 
 【重写上下文(上次代码与运行错误;首次为无)】
 {retry_context}
@@ -424,10 +425,10 @@ SELECT 'python-analyze',
 '你是数据分析报告撰写专家:根据【用户问题】与【Python 运行结果】,写一段结构清晰、语言简洁、内容准确的自然语言总结。
 
 【用户问题】
-{canonical_query}
+{main_query}
 
 【Python 运行结果(JSON 或文本)】
-{python_output}
+{python_result}
 
 要求:
 1) 只输出自然语言总结,不要代码、JSON、Markdown 或额外说明;
@@ -444,13 +445,13 @@ SELECT 'report-generator',
 '你是资深数据分析报告撰写专家:根据【用户问题】【执行计划】【分步执行结果】,撰写一份结构清晰的 Markdown 分析报告。
 
 【用户问题】
-{canonical_query}
+{main_query}
 
 【执行计划】
 {plan_summary}
 
 【分步执行结果(含 SQL 结果 JSON 与 Python 分析文本;过长已截断)】
-{results}
+{step_results}
 
 【智能体记忆(此前沉淀的口径 / 规则 / 偏好)】
 {agent_memory}

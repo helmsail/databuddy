@@ -45,13 +45,13 @@ public class SchemaRecallNode implements AsyncNodeAction {
 	@Override
 	@Observed(name = "node.schemaRecall", contextualName = "Schema 召回")
 	public CompletableFuture<Map<String, Object>> apply(OverAllState state) {
-		String canonical = state.value(GraphKeys.MAIN_QUERY, String.class)
+		String mainQuery = state.value(GraphKeys.MAIN_QUERY, String.class)
 			.orElse(state.value(GraphKeys.INPUT, String.class).orElse(""));
+		List<String> queryList = queries(state, mainQuery);
 		long agentId = NodeUtils.longOf(state, GraphKeys.AGENT_ID);
-		List<String> queryList = queries(state, canonical);
 		List<RetrievedChunk> tables = recall(agentId, queryList);
 		if (tables.isEmpty()) {
-			log.warn("Schema 召回未命中: agent={}, 查询=\"{}\"", agentId, canonical);
+			log.warn("Schema 召回未命中: agent={}, 查询=\"{}\"", agentId, mainQuery);
 			return CompletableFuture.completedFuture(Map.of(GraphKeys.SCHEMA, "无", GraphKeys.RECALLED_TABLES, List.of(),
 					GraphKeys.PROGRESS, "Schema 召回未命中:未检索到相关数据表", GraphKeys.FINAL_ANSWER, NO_TABLE_MESSAGE));
 		}
@@ -62,9 +62,9 @@ public class SchemaRecallNode implements AsyncNodeAction {
 	}
 
 	/** 检索查询组:主查询 + 备用查询(去重,主查询优先;无备用时单路) */
-	private List<String> queries(OverAllState state, String canonical) {
+	private List<String> queries(OverAllState state, String mainQuery) {
 		List<String> queries = new ArrayList<>();
-		queries.add(canonical);
+		queries.add(mainQuery);
 		for (String expanded : NodeUtils.stringList(state, GraphKeys.BACKUP_QUERIES)) {
 			if (!queries.contains(expanded)) {
 				queries.add(expanded);

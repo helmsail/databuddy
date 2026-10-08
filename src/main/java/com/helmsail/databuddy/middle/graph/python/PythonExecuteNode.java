@@ -61,7 +61,7 @@ public class PythonExecuteNode implements AsyncNodeAction {
 		if (!success) {
 			return CompletableFuture.completedFuture(fail(state, failureReason(result)));
 		}
-		int step = NodeUtils.intOf(state, GraphKeys.PLAN_STEP, 1);
+		int step = NodeUtils.intOf(state, GraphKeys.PLAN_STEP_NO, 1);
 		String stdout = result.stdout() == null ? "" : result.stdout();
 		String files = filesText(result);
 		Map<String, String> results = PlanUtils.withEntry(stepResults(state), "step_" + step, withFiles(stdout, files));
@@ -82,7 +82,7 @@ public class PythonExecuteNode implements AsyncNodeAction {
 						TERMINATION, GraphKeys.PROGRESS, "Python 组重试超限且重规划超限:终止");
 			}
 			return Map.of(PythonKeys.PYTHON_FAIL_REASON, reason, PythonKeys.PYTHON_NEXT, "replan", GraphKeys.PLAN_REPAIR_COUNT,
-					count, GraphKeys.PLAN_REPAIR_REASON, "Python 组多次失败: " + reason, GraphKeys.PLAN_STEP, 1,
+					count, GraphKeys.PLAN_REPAIR_REASON, "Python 组多次失败: " + reason, GraphKeys.PLAN_STEP_NO, 1,
 					PythonKeys.PYTHON_ATTEMPT, 0, GraphKeys.PROGRESS, "Python 组重试超限:升级重规划");
 		}
 		return Map.of(PythonKeys.PYTHON_FAIL_REASON, reason, PythonKeys.PYTHON_NEXT, "regenerate", GraphKeys.PROGRESS,

@@ -14,6 +14,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.helmsail.databuddy.bottom.aimodel.AiModelServiceFactory;
 import com.helmsail.databuddy.middle.graph.GraphKeys;
+import com.helmsail.databuddy.middle.graph.GraphNodes;
 import com.helmsail.databuddy.middle.graph.util.NodeUtils;
 import com.helmsail.databuddy.middle.memory.AgentMemoryTools;
 import com.helmsail.databuddy.middle.prompt.NodePromptTemplateMapper;
@@ -48,10 +49,10 @@ public class IntentRecognitionNode implements AsyncNodeAction {
 	@Observed(name = "node.intentRecognition", contextualName = "意图识别")
 	public CompletableFuture<Map<String, Object>> apply(OverAllState state) {
 		String input = state.value(GraphKeys.INPUT, String.class).orElse("");
-		String history = state.value(GraphKeys.SESSION_MEMORY, String.class).orElse("(无)");
-		String memory = state.value(GraphKeys.AGENT_MEMORY, String.class).orElse("(无)");
-		String user = NodeUtils.renderPrompt(promptMapper, GraphKeys.INTENT_RECOGNITION,
-				Map.of("query", input, "history", history, "agent_memory", memory));
+		String sessionMemory = state.value(GraphKeys.SESSION_MEMORY, String.class).orElse("(无)");
+		String agentMemory = state.value(GraphKeys.AGENT_MEMORY, String.class).orElse("(无)");
+		String user = NodeUtils.renderPrompt(promptMapper, GraphNodes.INTENT_RECOGNITION,
+				Map.of("input", input, "session_memory", sessionMemory, "agent_memory", agentMemory));
 		long agentId = NodeUtils.longOf(state, GraphKeys.AGENT_ID);
 		String output = aiModelServiceFactory.getChatClient()
 			.prompt()

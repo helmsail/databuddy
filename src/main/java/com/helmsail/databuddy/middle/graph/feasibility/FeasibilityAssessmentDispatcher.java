@@ -5,6 +5,7 @@ import org.springframework.util.StringUtils;
 import com.alibaba.cloud.ai.graph.OverAllState;
 import com.alibaba.cloud.ai.graph.action.EdgeAction;
 import com.helmsail.databuddy.middle.graph.GraphKeys;
+import com.helmsail.databuddy.middle.graph.GraphNodes;
 
 import static com.alibaba.cloud.ai.graph.StateGraph.END;
 
@@ -17,7 +18,7 @@ public class FeasibilityAssessmentDispatcher implements EdgeAction {
 	@Override
 	public String apply(OverAllState state) {
 		String clarification = state.value(GraphKeys.FINAL_ANSWER, String.class).orElse("");
-		return StringUtils.hasText(clarification) ? END : GraphKeys.PLANNER;
+		return StringUtils.hasText(clarification) ? END : GraphNodes.PLANNER;
 	}
 
 }

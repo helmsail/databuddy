@@ -26,6 +26,7 @@ import com.helmsail.databuddy.middle.graph.intent.IntentRecognitionNode;
 import com.helmsail.databuddy.middle.graph.knowledge.KnowledgeRecallNode;
 import com.helmsail.databuddy.middle.graph.plan.PlanExecutorDispatcher;
 import com.helmsail.databuddy.middle.graph.plan.PlanExecutorNode;
+import com.helmsail.databuddy.middle.graph.plan.PlannerDispatcher;
 import com.helmsail.databuddy.middle.graph.plan.PlannerNode;
 import com.helmsail.databuddy.middle.graph.python.PythonAnalyzeNode;
 import com.helmsail.databuddy.middle.graph.python.PythonExecuteDispatcher;
@@ -53,7 +54,7 @@ import static com.alibaba.cloud.ai.graph.StateGraph.START;
  * 图装配(全链版):拓扑、状态键策略、检查点、人工确认中断点——"怎么把图拼出来"都在这里;
  * 执行编排(跑图/事件/运行表/停止/释放/挂起恢复)在 GraphService。
  * 拓扑:入口 → 意图识别 →(chat)终点 /(data_analysis)知识召回 → 查询增强 → Schema 召回 → 表关系 →
- * 可行性评估 →(澄清)终点 /(可分析)规划 →【人工确认闸,开关默认关】→ 计划执行(枢纽):
+ * 可行性评估 →(澄清)终点 /(可分析)规划(生成侧自校验,不过原地重生成,超限终止) →【人工确认闸,开关默认关】→ 计划执行(枢纽):
  * SQL 组(SQL 生成 → 语义一致性 → SQL 执行,失败带原因打回生成)与 Python 组
  * (Python 生成 → Python 执行 → Python 分析)回流枢纽,组内超限升级回规划(全局 ≤ 3);
  * 步数走完 → 报告生成(固定收尾)→ 终点
@@ -91,13 +92,12 @@ public class GraphConfig {
 				Map.entry(GraphKeys.TABLE_RELATIONS, KeyStrategy.REPLACE),
 				Map.entry(GraphKeys.PROGRESS, KeyStrategy.REPLACE),
 				Map.entry(GraphKeys.PLAN_JSON, KeyStrategy.REPLACE),
-				Map.entry(GraphKeys.PLAN_STEP, KeyStrategy.REPLACE),
+				Map.entry(GraphKeys.PLAN_STEP_NO, KeyStrategy.REPLACE),
 				Map.entry(GraphKeys.HUMAN_REVIEW_ENABLED, KeyStrategy.REPLACE),
 				Map.entry(GraphKeys.PLAN_REVIEW_DECISION, KeyStrategy.REPLACE),
 				Map.entry(GraphKeys.PLAN_REPAIR_COUNT, KeyStrategy.REPLACE),
 				Map.entry(GraphKeys.PLAN_REPAIR_REASON, KeyStrategy.REPLACE),
-				Map.entry(GraphKeys.PLAN_VALID, KeyStrategy.REPLACE),
-				Map.entry(GraphKeys.PLAN_NEXT, KeyStrategy.REPLACE),
+				Map.entry(GraphKeys.PLAN_NEXT_NODE, KeyStrategy.REPLACE),
 				Map.entry(GraphKeys.NL2SQL_ENABLED, KeyStrategy.REPLACE),
 				Map.entry(GraphKeys.SQL_QUERY, KeyStrategy.REPLACE),
 				Map.entry(SqlKeys.SQL_ATTEMPT, KeyStrategy.REPLACE),
@@ -113,77 +113,79 @@ public class GraphConfig {
 				Map.entry(GraphKeys.STEP_RESULTS, KeyStrategy.REPLACE));
 		return new StateGraph("databuddy", keyStrategyFactory)
 			// 拓扑:入口 → 意图识别 → 按分类分流(chat → 终点;data_analysis → 知识召回)
-			.addNode(GraphKeys.INTENT_RECOGNITION, intentRecognitionNode)
-			.addNode(GraphKeys.KNOWLEDGE_RECALL, knowledgeRecallNode)
-			.addNode(GraphKeys.QUERY_ENHANCE, queryEnhanceNode)
-			.addNode(GraphKeys.SCHEMA_RECALL, schemaRecallNode)
-			.addNode(GraphKeys.TABLE_RELATION, tableRelationNode)
-			.addNode(GraphKeys.FEASIBILITY_ASSESSMENT, feasibilityAssessmentNode)
-			.addNode(GraphKeys.PLANNER, plannerNode)
-			.addNode(GraphKeys.PLAN_REVIEW, planReviewNode)
-			.addNode(GraphKeys.PLAN_EXECUTOR, planExecutorNode)
-			.addNode(GraphKeys.SQL_GENERATE, sqlGenerateNode)
-			.addNode(GraphKeys.SEMANTIC_CONSISTENCY, semanticConsistencyNode)
-			.addNode(GraphKeys.SQL_EXECUTE, sqlExecuteNode)
-			.addNode(GraphKeys.PYTHON_GENERATE, pythonGenerateNode)
-			.addNode(GraphKeys.PYTHON_EXECUTE, pythonExecuteNode)
-			.addNode(GraphKeys.PYTHON_ANALYZE, pythonAnalyzeNode)
-			.addNode(GraphKeys.REPORT_GENERATOR, reportGeneratorNode)
-			.addEdge(START, GraphKeys.INTENT_RECOGNITION)
+			.addNode(GraphNodes.INTENT_RECOGNITION, intentRecognitionNode)
+			.addNode(GraphNodes.KNOWLEDGE_RECALL, knowledgeRecallNode)
+			.addNode(GraphNodes.QUERY_ENHANCE, queryEnhanceNode)
+			.addNode(GraphNodes.SCHEMA_RECALL, schemaRecallNode)
+			.addNode(GraphNodes.TABLE_RELATION, tableRelationNode)
+			.addNode(GraphNodes.FEASIBILITY_ASSESSMENT, feasibilityAssessmentNode)
+			.addNode(GraphNodes.PLANNER, plannerNode)
+			.addNode(GraphNodes.PLAN_REVIEW, planReviewNode)
+			.addNode(GraphNodes.PLAN_EXECUTOR, planExecutorNode)
+			.addNode(GraphNodes.SQL_GENERATE, sqlGenerateNode)
+			.addNode(GraphNodes.SEMANTIC_CONSISTENCY, semanticConsistencyNode)
+			.addNode(GraphNodes.SQL_EXECUTE, sqlExecuteNode)
+			.addNode(GraphNodes.PYTHON_GENERATE, pythonGenerateNode)
+			.addNode(GraphNodes.PYTHON_EXECUTE, pythonExecuteNode)
+			.addNode(GraphNodes.PYTHON_ANALYZE, pythonAnalyzeNode)
+			.addNode(GraphNodes.REPORT_GENERATOR, reportGeneratorNode)
+			.addEdge(START, GraphNodes.INTENT_RECOGNITION)
 			// 分流逻辑在 IntentRecognitionDispatcher(与节点同包);表声明可能去向(分流器直接返回目标,恒等映射)
-			.addConditionalEdges(GraphKeys.INTENT_RECOGNITION,
+			.addConditionalEdges(GraphNodes.INTENT_RECOGNITION,
 					AsyncEdgeAction.edge_async(new IntentRecognitionDispatcher()),
-					Map.of(END, END, GraphKeys.KNOWLEDGE_RECALL, GraphKeys.KNOWLEDGE_RECALL))
+					Map.of(END, END, GraphNodes.KNOWLEDGE_RECALL, GraphNodes.KNOWLEDGE_RECALL))
 			// 知识召回 → 查询增强 → Schema 召回(直连)
-			.addEdge(GraphKeys.KNOWLEDGE_RECALL, GraphKeys.QUERY_ENHANCE)
-			.addEdge(GraphKeys.QUERY_ENHANCE, GraphKeys.SCHEMA_RECALL)
+			.addEdge(GraphNodes.KNOWLEDGE_RECALL, GraphNodes.QUERY_ENHANCE)
+			.addEdge(GraphNodes.QUERY_ENHANCE, GraphNodes.SCHEMA_RECALL)
 			// 分流逻辑在 SchemaRecallDispatcher:命中 → 表关系;未命中(已写终止语)→ 终点
-			.addConditionalEdges(GraphKeys.SCHEMA_RECALL,
+			.addConditionalEdges(GraphNodes.SCHEMA_RECALL,
 					AsyncEdgeAction.edge_async(new SchemaRecallDispatcher()),
-					Map.of(END, END, GraphKeys.TABLE_RELATION, GraphKeys.TABLE_RELATION))
+					Map.of(END, END, GraphNodes.TABLE_RELATION, GraphNodes.TABLE_RELATION))
 			// 表关系 → 可行性评估 →(澄清→终点 / 可分析→规划)
-			.addEdge(GraphKeys.TABLE_RELATION, GraphKeys.FEASIBILITY_ASSESSMENT)
-			.addConditionalEdges(GraphKeys.FEASIBILITY_ASSESSMENT,
+			.addEdge(GraphNodes.TABLE_RELATION, GraphNodes.FEASIBILITY_ASSESSMENT)
+			.addConditionalEdges(GraphNodes.FEASIBILITY_ASSESSMENT,
 					AsyncEdgeAction.edge_async(new FeasibilityAssessmentDispatcher()),
-					Map.of(END, END, GraphKeys.PLANNER, GraphKeys.PLANNER))
-			// 规划 → 计划执行(枢纽):人工确认闸由枢纽按入口开关派发,不在主线直连
-			.addEdge(GraphKeys.PLANNER, GraphKeys.PLAN_EXECUTOR)
-			// 枢纽派活:确认闸 / SQL 组 / Python 组 / 报告 / 回规划重写 / 终点(超限终止)
-			.addConditionalEdges(GraphKeys.PLAN_EXECUTOR,
+					Map.of(END, END, GraphNodes.PLANNER, GraphNodes.PLANNER))
+			// 规划 →(终止语)终点 /(过厂)枢纽;自校验在节点内循环,不走图;人工确认闸由枢纽按入口开关派发
+			.addConditionalEdges(GraphNodes.PLANNER,
+					AsyncEdgeAction.edge_async(new PlannerDispatcher()),
+					Map.of(END, END, GraphNodes.PLAN_EXECUTOR, GraphNodes.PLAN_EXECUTOR))
+			// 枢纽派活:确认闸 / SQL 组 / Python 组 / 报告 / 终点(轻档收束);每次必写 PLAN_NEXT_NODE,不在本表列规划
+			.addConditionalEdges(GraphNodes.PLAN_EXECUTOR,
 					AsyncEdgeAction.edge_async(new PlanExecutorDispatcher()),
-					Map.of(END, END, GraphKeys.PLAN_REVIEW, GraphKeys.PLAN_REVIEW, GraphKeys.SQL_GENERATE,
-							GraphKeys.SQL_GENERATE, GraphKeys.PYTHON_GENERATE, GraphKeys.PYTHON_GENERATE,
-							GraphKeys.REPORT_GENERATOR, GraphKeys.REPORT_GENERATOR, GraphKeys.PLANNER, GraphKeys.PLANNER))
+					Map.of(END, END, GraphNodes.PLAN_REVIEW, GraphNodes.PLAN_REVIEW, GraphNodes.SQL_GENERATE,
+							GraphNodes.SQL_GENERATE, GraphNodes.PYTHON_GENERATE, GraphNodes.PYTHON_GENERATE,
+							GraphNodes.REPORT_GENERATOR, GraphNodes.REPORT_GENERATOR))
 			// 人工确认闸(interruptBefore 静态中断点;开关关闭时枢纽不派向它,永不触发)
-			.addConditionalEdges(GraphKeys.PLAN_REVIEW,
+			.addConditionalEdges(GraphNodes.PLAN_REVIEW,
 					AsyncEdgeAction.edge_async(new PlanReviewDispatcher()),
-					Map.of(END, END, GraphKeys.PLANNER, GraphKeys.PLANNER, GraphKeys.PLAN_EXECUTOR,
-							GraphKeys.PLAN_EXECUTOR, GraphKeys.PLAN_REVIEW, GraphKeys.PLAN_REVIEW))
+					Map.of(END, END, GraphNodes.PLANNER, GraphNodes.PLANNER, GraphNodes.PLAN_EXECUTOR,
+							GraphNodes.PLAN_EXECUTOR, GraphNodes.PLAN_REVIEW, GraphNodes.PLAN_REVIEW))
 			// SQL 组:生成 → 语义一致性 → 执行;失败带原因打回生成,超限升级回规划
-			.addConditionalEdges(GraphKeys.SQL_GENERATE,
+			.addConditionalEdges(GraphNodes.SQL_GENERATE,
 					AsyncEdgeAction.edge_async(new SqlGenerateDispatcher()),
-					Map.of(END, END, GraphKeys.PLANNER, GraphKeys.PLANNER, GraphKeys.SQL_GENERATE, GraphKeys.SQL_GENERATE,
-							GraphKeys.SEMANTIC_CONSISTENCY, GraphKeys.SEMANTIC_CONSISTENCY))
-			.addConditionalEdges(GraphKeys.SEMANTIC_CONSISTENCY,
+					Map.of(END, END, GraphNodes.PLANNER, GraphNodes.PLANNER, GraphNodes.SQL_GENERATE, GraphNodes.SQL_GENERATE,
+							GraphNodes.SEMANTIC_CONSISTENCY, GraphNodes.SEMANTIC_CONSISTENCY))
+			.addConditionalEdges(GraphNodes.SEMANTIC_CONSISTENCY,
 					AsyncEdgeAction.edge_async(new SemanticConsistencyDispatcher()),
-					Map.of(GraphKeys.SQL_EXECUTE, GraphKeys.SQL_EXECUTE, GraphKeys.SQL_GENERATE, GraphKeys.SQL_GENERATE))
-			.addConditionalEdges(GraphKeys.SQL_EXECUTE,
+					Map.of(GraphNodes.SQL_EXECUTE, GraphNodes.SQL_EXECUTE, GraphNodes.SQL_GENERATE, GraphNodes.SQL_GENERATE))
+			.addConditionalEdges(GraphNodes.SQL_EXECUTE,
 					AsyncEdgeAction.edge_async(new SqlExecuteDispatcher()),
-					Map.of(END, END, GraphKeys.PLAN_EXECUTOR, GraphKeys.PLAN_EXECUTOR, GraphKeys.SQL_GENERATE,
-							GraphKeys.SQL_GENERATE))
+					Map.of(END, END, GraphNodes.PLAN_EXECUTOR, GraphNodes.PLAN_EXECUTOR, GraphNodes.SQL_GENERATE,
+							GraphNodes.SQL_GENERATE))
 			// Python 组:生成 → 执行 → 分析;失败带原因打回生成,超限升级回规划
-			.addEdge(GraphKeys.PYTHON_GENERATE, GraphKeys.PYTHON_EXECUTE)
-			.addConditionalEdges(GraphKeys.PYTHON_EXECUTE,
+			.addEdge(GraphNodes.PYTHON_GENERATE, GraphNodes.PYTHON_EXECUTE)
+			.addConditionalEdges(GraphNodes.PYTHON_EXECUTE,
 					AsyncEdgeAction.edge_async(new PythonExecuteDispatcher()),
-					Map.of(END, END, GraphKeys.PLANNER, GraphKeys.PLANNER, GraphKeys.PYTHON_GENERATE,
-							GraphKeys.PYTHON_GENERATE, GraphKeys.PYTHON_ANALYZE, GraphKeys.PYTHON_ANALYZE))
-			.addEdge(GraphKeys.PYTHON_ANALYZE, GraphKeys.PLAN_EXECUTOR)
+					Map.of(END, END, GraphNodes.PLANNER, GraphNodes.PLANNER, GraphNodes.PYTHON_GENERATE,
+							GraphNodes.PYTHON_GENERATE, GraphNodes.PYTHON_ANALYZE, GraphNodes.PYTHON_ANALYZE))
+			.addEdge(GraphNodes.PYTHON_ANALYZE, GraphNodes.PLAN_EXECUTOR)
 			// 报告固定收尾
-			.addEdge(GraphKeys.REPORT_GENERATOR, END)
+			.addEdge(GraphNodes.REPORT_GENERATOR, END)
 			.compile(CompileConfig.builder()
 				.saverConfig(SaverConfig.builder().register(checkpointSaver).build())
 				// 人工确认闸:到达该节点前自动挂起(仅当枢纽按开关派向它时才会到达)
-				.interruptBefore(GraphKeys.PLAN_REVIEW)
+				.interruptBefore(GraphNodes.PLAN_REVIEW)
 				.build());
 	}
 

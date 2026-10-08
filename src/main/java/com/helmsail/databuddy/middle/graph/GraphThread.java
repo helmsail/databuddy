@@ -26,7 +26,7 @@ class GraphThread {
 	@Getter
 	private final String input;
 
-	/** 轻档模式(MCP):规划不调 LLM / 跳过报告 / 不收尾回写记忆(同一 run 入口,参数决定图内走法) */
+	/** 轻档模式(MCP):计划只排 SQL 步 / 跳过报告 / 不收尾回写记忆(同一 run 入口,参数决定图内走法) */
 	@Getter
 	private final boolean nl2sqlMode;
 

@@ -58,7 +58,7 @@ public class GraphService {
 
 	/**
 	 * 发起一次执行(唯一入口):agentId/input 必填;sessionId 缺省则生成(随事件回传);
-	 * planReview = 人工确认闸开关(默认关);nl2sqlMode = 轻档(MCP):规划不调 LLM / 跳过报告 / 不回写记忆——
+	 * planReview = 人工确认闸开关(默认关);nl2sqlMode = 轻档(MCP):计划只排 SQL 步 / 跳过报告 / 不回写记忆——
 	 * 走法由图内按参数决定,外部无第二入口;返回组装好的 SSE 流
 	 */
 	public Flux<ServerSentEvent<GraphSseChunk>> run(long agentId, String input, String sessionId, boolean planReview,
@@ -173,7 +173,7 @@ public class GraphService {
 		// 挂起判定:下一跳含 PLAN_REVIEW 节点(中断在该节点前;决定写入不改 next,由续跑消费)
 		if (snapshot == null || !StringUtils.hasText(snapshot.next()) || Arrays.stream(snapshot.next().split(","))
 			.map(String::trim)
-			.noneMatch(GraphKeys.PLAN_REVIEW::equals)) {
+			.noneMatch(GraphNodes.PLAN_REVIEW::equals)) {
 			fail(sink, sessionId, "计划不存在或已失效");
 			return;
 		}

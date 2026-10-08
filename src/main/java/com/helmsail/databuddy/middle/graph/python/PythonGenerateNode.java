@@ -14,7 +14,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.helmsail.databuddy.bottom.aimodel.AiModelServiceFactory;
 import com.helmsail.databuddy.middle.graph.GraphKeys;
-import com.helmsail.databuddy.middle.graph.plan.PlanStep;
+import com.helmsail.databuddy.middle.graph.GraphNodes;
 import com.helmsail.databuddy.middle.graph.plan.PlanUtils;
 import com.helmsail.databuddy.middle.graph.util.NodeUtils;
 import com.helmsail.databuddy.middle.prompt.NodePromptTemplateMapper;
@@ -22,7 +22,7 @@ import com.helmsail.databuddy.middle.prompt.NodePromptTemplateMapper;
 import lombok.extern.slf4j.Slf4j;
 
 /**
- * Python 生成节点(Python 组头):按计划当前步的指令生成完整可运行脚本,写 PYTHON_CODE。
+ * Python 生成节点(Python 组头):按计划当前步的任务生成完整可运行脚本,写 PYTHON_CODE。
  * 生成侧只给"前 5 行样例"(省 token 防幻觉),全量数据在执行侧由 input.json 提供;
  * 失败重写注入上次代码与错误(带原文改);尝试计数每次生成 +1。
  * 阻塞的 LLM 调用发生在图订阅线程(boundedElastic)上,不占事件循环
@@ -51,30 +51,17 @@ public class PythonGenerateNode implements AsyncNodeAction {
 	@Observed(name = "node.pythonGenerate", contextualName = "Python 生成")
 	public CompletableFuture<Map<String, Object>> apply(OverAllState state) {
 		int attempt = NodeUtils.intOf(state, PythonKeys.PYTHON_ATTEMPT, 0) + 1;
-		String canonical = state.value(GraphKeys.MAIN_QUERY, String.class)
+		String mainQuery = state.value(GraphKeys.MAIN_QUERY, String.class)
 			.orElse(state.value(GraphKeys.INPUT, String.class).orElse(""));
-		String user = NodeUtils.renderPrompt(promptMapper, GraphKeys.PYTHON_GENERATE,
-				Map.of("schema", state.value(GraphKeys.SCHEMA, String.class).orElse("无"), "canonical_query", canonical,
-						"instruction", currentInstruction(state), "sample_input", sampleInput(state), "retry_context",
-						retryContext(state)));
+		String user = NodeUtils.renderPrompt(promptMapper, GraphNodes.PYTHON_GENERATE,
+				Map.of("schema", state.value(GraphKeys.SCHEMA, String.class).orElse("无"), "main_query", mainQuery,
+						"task", PlanUtils.currentTaskOrFallback(objectMapper, state, "按计划完成本步分析"),
+						"sample_input", sampleInput(state), "retry_context", retryContext(state)));
 		String output = aiModelServiceFactory.getChatClient().prompt().user(user).call().content();
 		String code = NodeUtils.stripFence(output).trim();
 		log.info("Python 代码生成完成(第 {} 次尝试, {} 字符)", attempt, code.length());
 		return CompletableFuture.completedFuture(Map.of(PythonKeys.PYTHON_CODE, code, PythonKeys.PYTHON_ATTEMPT, attempt,
 				PythonKeys.PYTHON_FAIL_REASON, "", GraphKeys.PROGRESS, "Python 代码生成完成(第 " + attempt + " 次尝试)"));
-	}
-
-	/** 读计划当前步指令(防御性解析;解析不了按泛化指令,不挡生成) */
-	private String currentInstruction(OverAllState state) {
-		try {
-			String planJson = state.value(GraphKeys.PLAN_JSON, String.class).orElse("");
-			int step = NodeUtils.intOf(state, GraphKeys.PLAN_STEP, 1);
-			PlanStep current = PlanUtils.stepAt(PlanUtils.parse(objectMapper, planJson), step);
-			return StringUtils.hasText(current.getInstruction()) ? current.getInstruction() : "按计划完成本步分析";
-		}
-		catch (RuntimeException e) {
-			return "按计划完成本步分析";
-		}
 	}
 
 	/** 样例输入:最近一次 SQL 结果的前 5 行(含列名与总行数);无结果给"(无)" */

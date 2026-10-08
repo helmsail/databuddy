@@ -5,6 +5,7 @@ import org.springframework.util.StringUtils;
 import com.alibaba.cloud.ai.graph.OverAllState;
 import com.alibaba.cloud.ai.graph.action.EdgeAction;
 import com.helmsail.databuddy.middle.graph.GraphKeys;
+import com.helmsail.databuddy.middle.graph.GraphNodes;
 
 import static com.alibaba.cloud.ai.graph.StateGraph.END;
 
@@ -24,9 +25,9 @@ public class SqlGenerateDispatcher implements EdgeAction {
 		String next = state.value(SqlKeys.SQL_NEXT, "semantic");
 		return switch (next) {
 			case "end" -> END;
-			case "replan" -> GraphKeys.PLANNER;
-			case "regenerate" -> GraphKeys.SQL_GENERATE;
-			default -> GraphKeys.SEMANTIC_CONSISTENCY;
+			case "replan" -> GraphNodes.PLANNER;
+			case "regenerate" -> GraphNodes.SQL_GENERATE;
+			default -> GraphNodes.SEMANTIC_CONSISTENCY;
 		};
 	}
 

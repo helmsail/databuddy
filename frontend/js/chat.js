@@ -369,11 +369,11 @@ function renderPlanCard(planText, withBadge) {
   } catch {
     return `<pre class="code">${esc(planText)}</pre>`;
   }
-  const steps = Array.isArray(p.execution_plan) ? p.execution_plan : [];
+  const steps = Array.isArray(p.planSteps) ? p.planSteps : [];
   return `<div class="plan-card">
     <div class="plan-title">${withBadge ? '待确认的执行计划' : '执行计划'}</div>
-    ${p.thought_process ? `<div class="dim small" style="margin-bottom:4px">思路:${esc(p.thought_process)}</div>` : ''}
-    <ol>${steps.map((s) => `<li>${esc(s.instruction)} <span class="dim small">(${esc(s.tool_to_use)})</span></li>`).join('')}</ol>
+    ${p.planTitle ? `<div class="dim small" style="margin-bottom:4px">计划标题:${esc(p.planTitle)}</div>` : ''}
+    <ol>${steps.map((s) => `<li>${esc(s.task)} <span class="dim small">(${esc(s.selectGroup)})</span></li>`).join('')}</ol>
   </div>`;
 }
 

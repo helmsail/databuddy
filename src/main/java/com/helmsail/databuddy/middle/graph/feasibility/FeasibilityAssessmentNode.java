@@ -14,6 +14,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.helmsail.databuddy.bottom.aimodel.AiModelServiceFactory;
 import com.helmsail.databuddy.middle.graph.GraphKeys;
+import com.helmsail.databuddy.middle.graph.GraphNodes;
 import com.helmsail.databuddy.middle.graph.util.NodeUtils;
 import com.helmsail.databuddy.middle.prompt.NodePromptTemplateMapper;
 
@@ -51,15 +52,15 @@ public class FeasibilityAssessmentNode implements AsyncNodeAction {
 	@Override
 	@Observed(name = "node.feasibilityAssessment", contextualName = "可行性评估")
 	public CompletableFuture<Map<String, Object>> apply(OverAllState state) {
-		String canonical = state.value(GraphKeys.MAIN_QUERY, String.class)
+		String mainQuery = state.value(GraphKeys.MAIN_QUERY, String.class)
 			.orElse(state.value(GraphKeys.INPUT, String.class).orElse(""));
 		String schema = state.value(GraphKeys.SCHEMA, String.class).orElse("无");
-		String relations = state.value(GraphKeys.TABLE_RELATIONS, String.class).orElse("无");
+		String tableRelations = state.value(GraphKeys.TABLE_RELATIONS, String.class).orElse("无");
 		String knowledge = state.value(GraphKeys.KNOWLEDGE, String.class).orElse("无");
-		String history = state.value(GraphKeys.SESSION_MEMORY, String.class).orElse("(无)");
-		String user = NodeUtils.renderPrompt(promptMapper, GraphKeys.FEASIBILITY_ASSESSMENT,
-				Map.of("canonical_query", canonical, "schema", schema, "relations", relations, "knowledge", knowledge,
-						"history", history));
+		String sessionMemory = state.value(GraphKeys.SESSION_MEMORY, String.class).orElse("(无)");
+		String user = NodeUtils.renderPrompt(promptMapper, GraphNodes.FEASIBILITY_ASSESSMENT,
+				Map.of("main_query", mainQuery, "schema", schema, "table_relations", tableRelations, "knowledge",
+						knowledge, "session_memory", sessionMemory));
 		return CompletableFuture.completedFuture(assess(user));
 	}
 

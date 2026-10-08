@@ -19,6 +19,7 @@ import com.helmsail.databuddy.middle.bizdocument.AgentBizDocumentService;
 import com.helmsail.databuddy.middle.bizqa.AgentBizQaService;
 import com.helmsail.databuddy.middle.bizterm.AgentBizTermService;
 import com.helmsail.databuddy.middle.graph.GraphKeys;
+import com.helmsail.databuddy.middle.graph.GraphNodes;
 import com.helmsail.databuddy.middle.graph.util.NodeUtils;
 import com.helmsail.databuddy.middle.prompt.NodePromptTemplateMapper;
 import com.helmsail.databuddy.bottom.vectorize.RetrievedChunk;
@@ -67,25 +68,25 @@ public class KnowledgeRecallNode implements AsyncNodeAction {
 	@Observed(name = "node.knowledgeRecall", contextualName = "知识召回")
 	public CompletableFuture<Map<String, Object>> apply(OverAllState state) {
 		String input = state.value(GraphKeys.INPUT, String.class).orElse("");
-		String history = state.value(GraphKeys.SESSION_MEMORY, String.class).orElse("(无)");
-		String memory = state.value(GraphKeys.AGENT_MEMORY, String.class).orElse("(无)");
+		String sessionMemory = state.value(GraphKeys.SESSION_MEMORY, String.class).orElse("(无)");
+		String agentMemory = state.value(GraphKeys.AGENT_MEMORY, String.class).orElse("(无)");
 		long agentId = NodeUtils.longOf(state, GraphKeys.AGENT_ID);
-		String query = rewrite(input, history);
+		String query = rewrite(input, sessionMemory);
 		// 逐域独立检索(术语 / 问答 / 文档各得独立 topK;表块归后续 Schema 召回)
 		List<RetrievedChunk> hits = new ArrayList<>();
 		hits.addAll(bizTermService.retrieve(agentId, query, TOP_K));
 		hits.addAll(bizQaService.retrieve(agentId, query, TOP_K));
 		hits.addAll(bizDocumentService.retrieve(agentId, query, TOP_K));
 		log.info("知识召回: agent={}, 重写查询=\"{}\", 命中 {} 条", agentId, query, hits.size());
-		return CompletableFuture.completedFuture(Map.of(GraphKeys.KNOWLEDGE, collect(hits, memory), GraphKeys.PROGRESS,
+		return CompletableFuture.completedFuture(Map.of(GraphKeys.KNOWLEDGE, collect(hits, agentMemory), GraphKeys.PROGRESS,
 				hits.isEmpty() ? "知识召回完成:未命中相关知识" : "知识召回完成:命中 " + hits.size() + " 条"));
 	}
 
 	/** 结合历史重写为独立查询;调用或输出失败(异常/不可解析/为空)回退原问题(检索仍可命中) */
-	private String rewrite(String input, String history) {
+	private String rewrite(String input, String sessionMemory) {
 		try {
-			String user = NodeUtils.renderPrompt(promptMapper, GraphKeys.KNOWLEDGE_RECALL,
-					Map.of("query", input, "history", history));
+			String user = NodeUtils.renderPrompt(promptMapper, GraphNodes.KNOWLEDGE_RECALL,
+					Map.of("input", input, "session_memory", sessionMemory));
 			String output = aiModelServiceFactory.getChatClient().prompt().user(user).call().content();
 			JsonNode root = NodeUtils.parseJson(objectMapper, output);
 			String standalone = root.path("standalone_query").asText("");
@@ -101,12 +102,12 @@ public class KnowledgeRecallNode implements AsyncNodeAction {
 	}
 
 	/** 业务语义总集:有记忆先给记忆段(口径 / 规则 / 偏好,置于前优先参考),其后拼召回知识;两段皆空为"无" */
-	private String collect(List<RetrievedChunk> hits, String memory) {
+	private String collect(List<RetrievedChunk> hits, String agentMemory) {
 		String knowledge = format(hits);
-		if (!StringUtils.hasText(memory) || "(无)".equals(memory)) {
+		if (!StringUtils.hasText(agentMemory) || "(无)".equals(agentMemory)) {
 			return knowledge;
 		}
-		String section = "【智能体记忆(此前沉淀的口径 / 规则 / 偏好)】\n" + memory;
+		String section = "【智能体记忆(此前沉淀的口径 / 规则 / 偏好)】\n" + agentMemory;
 		return "无".equals(knowledge) ? section : section + "\n\n" + knowledge;
 	}
 

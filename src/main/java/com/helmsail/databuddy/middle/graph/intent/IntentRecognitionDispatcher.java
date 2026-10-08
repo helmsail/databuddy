@@ -2,7 +2,7 @@ package com.helmsail.databuddy.middle.graph.intent;
 
 import com.alibaba.cloud.ai.graph.OverAllState;
 import com.alibaba.cloud.ai.graph.action.EdgeAction;
-import com.helmsail.databuddy.middle.graph.GraphKeys;
+import com.helmsail.databuddy.middle.graph.GraphNodes;
 
 import static com.alibaba.cloud.ai.graph.StateGraph.END;
 
@@ -16,7 +16,7 @@ public class IntentRecognitionDispatcher implements EdgeAction {
 	@Override
 	public String apply(OverAllState state) {
 		IntentType type = IntentType.from(state.value(IntentKeys.CLASSIFICATION, String.class).orElse(""));
-		return type == IntentType.DATA_ANALYSIS ? GraphKeys.KNOWLEDGE_RECALL : END;
+		return type == IntentType.DATA_ANALYSIS ? GraphNodes.KNOWLEDGE_RECALL : END;
 	}
 
 }

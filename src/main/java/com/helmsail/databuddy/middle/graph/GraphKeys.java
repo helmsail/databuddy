@@ -1,8 +1,8 @@
 package com.helmsail.databuddy.middle.graph;
 
 /**
- * 图常量唯一登记:SSE 帧类型、节点 ID 与跨域状态键
- * (域内自洽的状态键见子包 IntentKeys / PythonKeys / SqlKeys)
+ * 图状态键与帧类型唯一登记:SSE 帧类型 + 跨域状态键
+ * (节点 ID 见 GraphNodes;域内自洽的状态键见子包 IntentKeys / PythonKeys / SqlKeys)
  */
 public final class GraphKeys {
 
@@ -28,56 +28,6 @@ public final class GraphKeys {
 
 	/** 结果帧:SQL 执行结果(text = 结果 JSON:{step,sql,columns,rows,row_count,truncated}) */
 	public static final String RESULT = "result";
-
-	// —— 节点 ID(与 node_prompt_template.name 对齐) ——
-
-	/** 意图识别节点 */
-	public static final String INTENT_RECOGNITION = "intent-recognition";
-
-	/** 知识召回节点(数据链首节点) */
-	public static final String KNOWLEDGE_RECALL = "knowledge-recall";
-
-	/** 查询增强节点(数据链第二节点) */
-	public static final String QUERY_ENHANCE = "query-enhance";
-
-	/** Schema 召回节点(数据链第三节点) */
-	public static final String SCHEMA_RECALL = "schema-recall";
-
-	/** 表关系节点(数据链第四节点) */
-	public static final String TABLE_RELATION = "table-relation";
-
-	/** 可行性评估节点(数据链第五节点) */
-	public static final String FEASIBILITY_ASSESSMENT = "feasibility-assessment";
-
-	/** 规划节点(数据链第六节点):产出执行计划 */
-	public static final String PLANNER = "planner";
-
-	/** 人工确认闸:计划执行前的唯一拦截点(interruptBefore 静态中断;入口开关默认关) */
-	public static final String PLAN_REVIEW = "plan-review";
-
-	/** 计划执行节点(枢纽):按当前步派活,走完转报告 */
-	public static final String PLAN_EXECUTOR = "plan-executor";
-
-	/** SQL 生成节点(SQL 组头) */
-	public static final String SQL_GENERATE = "sql-generate";
-
-	/** 语义一致性节点(SQL 组质检,执行前审文本) */
-	public static final String SEMANTIC_CONSISTENCY = "semantic-consistency";
-
-	/** SQL 执行节点(对业务库运行只读查询) */
-	public static final String SQL_EXECUTE = "sql-execute";
-
-	/** Python 生成节点(Python 组头) */
-	public static final String PYTHON_GENERATE = "python-generate";
-
-	/** Python 执行节点(沙箱运行) */
-	public static final String PYTHON_EXECUTE = "python-execute";
-
-	/** Python 分析节点(Python 组质检,执行后审结果) */
-	public static final String PYTHON_ANALYZE = "python-analyze";
-
-	/** 报告生成节点(固定收尾) */
-	public static final String REPORT_GENERATOR = "report-generator";
 
 	// —— 状态键(OverAllState;随节点接入按需增补) ——
 
@@ -120,8 +70,8 @@ public final class GraphKeys {
 	/** 执行计划 JSON(规划节点产出;提示词契约见 planner 种子) */
 	public static final String PLAN_JSON = "plan_json";
 
-	/** 当前步骤号(1 起;枢纽读,SQL 执行成功 / Python 分析完成时 +1) */
-	public static final String PLAN_STEP = "plan_step";
+	/** 当前步号(数字,1 起;规划写 1,枢纽读,SQL 执行成功 / Python 分析完成时 +1) */
+	public static final String PLAN_STEP_NO = "plan_step_no";
 
 	/** 人工确认闸开关(入口传参,默认关;挂起恢复后由确认节点关掉) */
 	public static final String HUMAN_REVIEW_ENABLED = "human_review_enabled";
@@ -129,19 +79,16 @@ public final class GraphKeys {
 	/** 人工确认决定(恢复时由 updateState 写入:{approved, feedback}) */
 	public static final String PLAN_REVIEW_DECISION = "plan_review_decision";
 
-	/** 计划重写计数(校验失败 / 人工否决 / 执行组超限升级,共用;上限见各节点) */
+	/** 计划重写计数(人工否决 / 执行组超限升级 共用;上限见各节点) */
 	public static final String PLAN_REPAIR_COUNT = "plan_repair_count";
 
 	/** 计划重写原因(注入规划提示词;失败路径每次覆盖写) */
 	public static final String PLAN_REPAIR_REASON = "plan_repair_reason";
 
-	/** 计划校验结果(枢纽写,分流器读) */
-	public static final String PLAN_VALID = "plan_valid";
+	/** 下一跳节点(枢纽/确认节点写,分流器读):节点 ID 或 END 标记 */
+	public static final String PLAN_NEXT_NODE = "plan_next_node";
 
-	/** 枢纽派活目标(枢纽/确认节点写,分流器读):节点 ID 或 END 标记 */
-	public static final String PLAN_NEXT = "plan_next";
-
-	/** 轻档开关(NL2SQL 模式:MCP 入口传参;规划固定单步不调 LLM,走完跳过报告) */
+	/** 轻档开关(NL2SQL 模式:MCP 入口传参;计划照常生成但只排 SQL 步,走完跳过报告) */
 	public static final String NL2SQL_ENABLED = "nl2sql_enabled";
 
 	/** 当前生成的 SQL 文本(SQL 生成节点写;执行节点读) */
