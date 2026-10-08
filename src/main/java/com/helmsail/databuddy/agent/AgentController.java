@@ -19,18 +19,19 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
 
-import com.helmsail.databuddy.agent.bizdocument.AgentBizDocument;
-import com.helmsail.databuddy.agent.bizqa.AgentBizQa;
-import com.helmsail.databuddy.agent.biztable.AgentBizTable;
-import com.helmsail.databuddy.agent.bizterm.AgentBizTerm;
+import com.helmsail.databuddy.middle.bizdocument.AgentBizDocument;
+import com.helmsail.databuddy.middle.bizqa.AgentBizQa;
+import com.helmsail.databuddy.middle.biztable.AgentBizTable;
+import com.helmsail.databuddy.middle.bizterm.AgentBizTerm;
 import com.helmsail.databuddy.exception.BusinessException;
 import com.helmsail.databuddy.exception.ErrorCode;
-import com.helmsail.databuddy.graph.GraphSseChunk;
-import com.helmsail.databuddy.memory.AgentMemory;
+import com.helmsail.databuddy.middle.graph.GraphSseChunk;
+import com.helmsail.databuddy.middle.memory.AgentMemory;
 import com.helmsail.databuddy.result.ApiResponse;
-import com.helmsail.databuddy.vectorize.KnowledgeType;
-import com.helmsail.databuddy.vectorize.VectorPresence;
-import com.helmsail.databuddy.vectorize.splitter.SplitterType;
+import com.helmsail.databuddy.bottom.vectorize.KnowledgeType;
+import com.helmsail.databuddy.bottom.vectorize.RetrievedChunk;
+import com.helmsail.databuddy.bottom.vectorize.VectorPresence;
+import com.helmsail.databuddy.bottom.vectorize.splitter.SplitterType;
 
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -102,7 +103,7 @@ public class AgentController {
 		return reactiveVoid(() -> agentService.delete(agentId));
 	}
 
-	/** 检索联调口(节点侧走 AgentService.retrieve;返回结构化块,含回源字段,不做上下文成文;检索含向量调用,走弹性线程) */
+	/** 检索联调口(逐域独立检索后合并;节点侧直连各子域服务,不经本口;返回结构化块含回源字段,检索含向量调用,走弹性线程) */
 	@GetMapping("/{agentId}/retrieve")
 	public Mono<ApiResponse<List<RetrievedChunk>>> retrieve(@PathVariable("agentId") long agentId,
 			@RequestParam("query") String query, @RequestParam(name = "topK", defaultValue = "5") int topK) {

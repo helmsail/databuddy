@@ -21,8 +21,8 @@ import com.helmsail.databuddy.agent.Agent;
 import com.helmsail.databuddy.agent.AgentService;
 import com.helmsail.databuddy.exception.BusinessException;
 import com.helmsail.databuddy.exception.ErrorCode;
-import com.helmsail.databuddy.graph.GraphKeys;
-import com.helmsail.databuddy.graph.GraphSseChunk;
+import com.helmsail.databuddy.middle.graph.GraphKeys;
+import com.helmsail.databuddy.middle.graph.GraphSseChunk;
 
 import lombok.extern.slf4j.Slf4j;
 

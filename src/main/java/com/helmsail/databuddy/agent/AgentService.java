@@ -1,14 +1,8 @@
 package com.helmsail.databuddy.agent;
 
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.stream.Collectors;
 
-import org.springframework.ai.document.Document;
-import org.springframework.context.annotation.Lazy;
 import org.springframework.context.event.EventListener;
 import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.http.codec.multipart.FilePart;
@@ -16,42 +10,37 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
-import com.helmsail.databuddy.agent.bizdocument.AgentBizDocument;
-import com.helmsail.databuddy.agent.bizdocument.AgentBizDocumentService;
-import com.helmsail.databuddy.agent.bizqa.AgentBizQa;
-import com.helmsail.databuddy.agent.bizqa.AgentBizQaService;
-import com.helmsail.databuddy.agent.biztable.AgentBizTable;
-import com.helmsail.databuddy.agent.biztable.AgentBizTableService;
-import com.helmsail.databuddy.agent.bizterm.AgentBizTerm;
-import com.helmsail.databuddy.agent.bizterm.AgentBizTermService;
-import com.helmsail.databuddy.aimodel.EmbeddingModelSwitchedEvent;
-import com.helmsail.databuddy.bizdatabase.BizDatabaseConfig;
-import com.helmsail.databuddy.bizdatabase.BizDatabaseService;
-import com.helmsail.databuddy.bizdatabase.BizTableRelation;
-import com.helmsail.databuddy.bizdatabase.jdbc.config.DbType;
+import com.helmsail.databuddy.bottom.aimodel.EmbeddingModelSwitchedEvent;
+import com.helmsail.databuddy.middle.bizdocument.AgentBizDocument;
+import com.helmsail.databuddy.middle.bizdocument.AgentBizDocumentService;
+import com.helmsail.databuddy.middle.bizqa.AgentBizQa;
+import com.helmsail.databuddy.middle.bizqa.AgentBizQaService;
+import com.helmsail.databuddy.middle.biztable.AgentBizTable;
+import com.helmsail.databuddy.middle.biztable.AgentBizTableService;
+import com.helmsail.databuddy.middle.bizterm.AgentBizTerm;
+import com.helmsail.databuddy.middle.bizterm.AgentBizTermService;
 import com.helmsail.databuddy.exception.BusinessException;
 import com.helmsail.databuddy.exception.ErrorCode;
-import com.helmsail.databuddy.graph.GraphService;
-import com.helmsail.databuddy.graph.GraphSseChunk;
-import com.helmsail.databuddy.memory.AgentMemory;
-import com.helmsail.databuddy.memory.MemoryService;
-import com.helmsail.databuddy.session.Session;
-import com.helmsail.databuddy.session.SessionService;
-import com.helmsail.databuddy.vectorize.KnowledgeType;
-import com.helmsail.databuddy.vectorize.VectorMetadata;
-import com.helmsail.databuddy.vectorize.VectorPresence;
-import com.helmsail.databuddy.vectorize.VectorService;
-import com.helmsail.databuddy.vectorize.splitter.SplitterType;
+import com.helmsail.databuddy.middle.graph.GraphService;
+import com.helmsail.databuddy.middle.graph.GraphSseChunk;
+import com.helmsail.databuddy.middle.memory.AgentMemory;
+import com.helmsail.databuddy.middle.memory.MemoryService;
+import com.helmsail.databuddy.middle.session.Session;
+import com.helmsail.databuddy.middle.session.SessionService;
+import com.helmsail.databuddy.bottom.vectorize.KnowledgeType;
+import com.helmsail.databuddy.bottom.vectorize.RetrievedChunk;
+import com.helmsail.databuddy.bottom.vectorize.VectorPresence;
+import com.helmsail.databuddy.bottom.vectorize.VectorService;
+import com.helmsail.databuddy.bottom.vectorize.splitter.SplitterType;
 
 import lombok.extern.slf4j.Slf4j;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 /**
- * 智能体服务:agent 域的唯一对外口(身份 + 图执行 + 跨域横切 + 检索用例 + 知识子域全量门面);域外(含 HTTP 层)只认本类。
- * 图执行:run / resume / clear 薄转发 GraphService(图节点反向依赖本服务,注入以 @Lazy 断环;agent 存在性校验在此前置);
- * 知识子域操作(表 / 术语 / 问答 / 文档 / 记忆 / 向量盘点)全部薄转发,逻辑归各子域 Service,本类不加工;
- * 检索:跨四类来源向量命中 + 按来源回源补齐(QA 补答案、文档补名称;术语/表块内容自足);
+ * 智能体服务:入口层(HTTP / MCP)共用的 agent 域门面(身份 + 图执行 + 跨域横切 + 知识子域全量门面);入口只认本类。
+ * 图执行:run / resume / clear 薄转发 GraphService(依赖单向:本类 → 图域;图节点直连各子域服务取数,不再反向依赖本类);
+ * 知识子域操作(表 / 术语 / 问答 / 文档 / 记忆 / 向量盘点)全部薄转发,逻辑归各子域 Service,本类不加工;agent 存在性校验在本类前置;
  * 级联删除:四域逐行清(行 + 向量 + 物理文件)+ 会话域(行 + 消息 + 跨图记忆/摘要)+ agent 沉淀记忆 → 向量兜底清扫 → 删 agent 行 → 停图运行 + 释放检查点;
  * 模型切换事件:术语 / 问答 / 文档已同步行标记失效(原因=切换),交重试管线在新分区重建;表域无状态字段,由人工刷新入口覆盖
  */
@@ -75,16 +64,13 @@ public class AgentService {
 
 	private final VectorService vectorService;
 
-	private final BizDatabaseService bizDatabaseService;
-
-	/** 图执行(惰性 @Lazy 断环:图节点反向依赖本服务,构造直连会成环) */
+	/** 图执行(单向:图节点已直连子域服务,无环,无需断环) */
 	private final GraphService graphService;
 
 	public AgentService(AgentMapper agentMapper, AgentBizTableService agentBizTableService,
 			AgentBizTermService agentBizTermService, AgentBizQaService agentBizQaService,
 			AgentBizDocumentService agentBizDocumentService, MemoryService memoryService,
-			SessionService sessionService, VectorService vectorService, BizDatabaseService bizDatabaseService,
-			@Lazy GraphService graphService) {
+			SessionService sessionService, VectorService vectorService, GraphService graphService) {
 		this.agentMapper = agentMapper;
 		this.agentBizTableService = agentBizTableService;
 		this.agentBizTermService = agentBizTermService;
@@ -93,7 +79,6 @@ public class AgentService {
 		this.memoryService = memoryService;
 		this.sessionService = sessionService;
 		this.vectorService = vectorService;
-		this.bizDatabaseService = bizDatabaseService;
 		this.graphService = graphService;
 	}
 
@@ -190,81 +175,17 @@ public class AgentService {
 	}
 
 	/**
-	 * 检索:跨四类知识向量命中,再按知识条目回源补齐(QA 补答案、文档补名称;术语与表块内容自足)。
-	 * 供域外(图节点等)消费;只回结构化块,上下文成文由调用方做
+	 * 检索联调合并口(管理界面"检索测试"专用):逐域独立检索后合并(术语 / 问答 / 文档 / 表块;各域回源字段齐全)。
+	 * 图链路不经本口——节点直连各子域服务
 	 */
 	public List<RetrievedChunk> retrieve(long agentId, String query, int topK) {
-		return retrieve(agentId, query, topK, null);
-	}
-
-	/** 检索(限定单一知识类型;knowledgeType 空 = 全部类型):召回按类型逐次调用、各得独立 topK;表块归 Schema 召回 */
-	public List<RetrievedChunk> retrieve(long agentId, String query, int topK, KnowledgeType knowledgeType) {
 		requireAgent(agentId);
-		List<Document> hits = vectorService.search(agentId, query, topK, knowledgeType);
-		List<RetrievedChunk> chunks = new ArrayList<>(hits.size());
-		for (Document hit : hits) {
-			KnowledgeType hitType = KnowledgeType.valueOf(metadata(hit, VectorMetadata.KNOWLEDGE_TYPE));
-			long knowledgeId = metadataLong(hit, VectorMetadata.KNOWLEDGE_ID);
-			Double score = hit.getScore();
-			chunks.add(new RetrievedChunk(hitType, knowledgeId, score == null ? 0d : score, hit.getText(),
-					extra(agentId, hitType, knowledgeId)));
-		}
+		List<RetrievedChunk> chunks = new ArrayList<>();
+		chunks.addAll(agentBizTermService.retrieve(agentId, query, topK));
+		chunks.addAll(agentBizQaService.retrieve(agentId, query, topK));
+		chunks.addAll(agentBizDocumentService.retrieve(agentId, query, topK));
+		chunks.addAll(agentBizTableService.retrieve(agentId, query, topK));
 		return chunks;
-	}
-
-	/**
-	 * 取与指定表集相关的表关系:按 agent_biz_table 行定位这些表所属的业务库 → 逐库取关系 →
-	 * 只保留"源表或目标表命中给定表集"的行;供表关系节点做 join 补齐(零 LLM)
-	 */
-	public List<BizTableRelation> relationsOf(long agentId, Collection<String> tableNames) {
-		if (tableNames == null || tableNames.isEmpty()) {
-			return List.of();
-		}
-		Set<String> names = Set.copyOf(tableNames);
-		Set<Long> configIds = agentBizTableService.list(agentId)
-			.stream()
-			.filter(row -> names.contains(row.getTableName()))
-			.map(AgentBizTable::getDatabaseConfigId)
-			.collect(Collectors.toSet());
-		List<BizTableRelation> relations = new ArrayList<>();
-		for (Long configId : configIds) {
-			for (BizTableRelation relation : bizDatabaseService.listRelations(configId)) {
-				if (names.contains(relation.getSourceTableName()) || names.contains(relation.getTargetTableName())) {
-					relations.add(relation);
-				}
-			}
-		}
-		log.info("表关系查询: agent={}, 表集 {} 张, 命中关系 {} 条", agentId, names.size(), relations.size());
-		return relations;
-	}
-
-	/** 数据分析目标库:配置 id + 方言文本(图内 SQL 组节点共用:提示词用方言、执行用连接) */
-	public record DatabaseTarget(long configId, String dialect) {
-	}
-
-	/**
-	 * 解析智能体分析目标库:按召回表定位所属库配置(命中表所属库优先;无命中时仅当绑定表同属一库取唯一);
-	 * 判不出返回 null(由节点侧写终止语);零 LLM
-	 */
-	public DatabaseTarget databaseTargetOf(long agentId, Collection<String> tableNames) {
-		requireAgent(agentId);
-		List<AgentBizTable> rows = agentBizTableService.list(agentId);
-		if (rows.isEmpty()) {
-			log.warn("无法判定分析目标库: agent={}, 未绑定任何数据表", agentId);
-			return null;
-		}
-		Set<String> names = tableNames == null || tableNames.isEmpty() ? Set.of() : Set.copyOf(tableNames);
-		AgentBizTable hit = rows.stream().filter(row -> names.contains(row.getTableName())).findFirst().orElse(null);
-		if (hit == null) {
-			Set<Long> configIds = rows.stream().map(AgentBizTable::getDatabaseConfigId).collect(Collectors.toSet());
-			if (configIds.size() != 1) {
-				log.warn("无法判定分析目标库: agent={}, 候选库 {} 个, 召回表均未命中绑定", agentId, configIds.size());
-				return null;
-			}
-			hit = rows.get(0);
-		}
-		BizDatabaseConfig config = bizDatabaseService.getConfig(hit.getDatabaseConfigId());
-		return new DatabaseTarget(config.getId(), dialect(config.getDbType()));
 	}
 
 	// ============ 知识子域门面(薄转发:逻辑在各子域 Service,本类不加工) ============
@@ -276,8 +197,9 @@ public class AgentService {
 		return agentBizTableService.list(agentId);
 	}
 
-	/** 绑定业务表(校验库与表存在;已绑定幂等跳过;首刷由前端连带调刷新入口) */
+	/** 绑定业务表(agent 必须存在;校验库与表存在;已绑定幂等跳过;首刷由前端连带调刷新入口) */
 	public void bindTables(long agentId, long databaseConfigId, List<String> tableNames) {
+		requireAgent(agentId);
 		agentBizTableService.bind(agentId, databaseConfigId, tableNames);
 	}
 
@@ -298,8 +220,9 @@ public class AgentService {
 		return agentBizTermService.list(agentId);
 	}
 
-	/** 新增术语(落库后立即同步向量) */
+	/** 新增术语(agent 必须存在;落库后立即同步向量) */
 	public AgentBizTerm addTerm(long agentId, AgentBizTerm term) {
+		requireAgent(agentId);
 		return agentBizTermService.add(agentId, term);
 	}
 
@@ -325,8 +248,9 @@ public class AgentService {
 		return agentBizQaService.list(agentId);
 	}
 
-	/** 新增问答(落库后立即同步问题向量;答案可后补) */
+	/** 新增问答(agent 必须存在;落库后立即同步问题向量;答案可后补) */
 	public AgentBizQa addQa(long agentId, AgentBizQa qa) {
+		requireAgent(agentId);
 		return agentBizQaService.add(agentId, qa);
 	}
 
@@ -352,8 +276,9 @@ public class AgentService {
 		return agentBizDocumentService.list(agentId);
 	}
 
-	/** 上传文档(落行 + 落文件后立即返回,后台队列异步向量化) */
+	/** 上传文档(agent 必须存在;落行 + 落文件后立即返回,后台队列异步向量化) */
 	public Mono<AgentBizDocument> uploadDocument(long agentId, FilePart file, String name, SplitterType splitterType) {
+		requireAgent(agentId);
 		return agentBizDocumentService.upload(agentId, file, name, splitterType);
 	}
 
@@ -399,51 +324,6 @@ public class AgentService {
 	/** 删 (agent, 模型, 知识类型) 三维度向量;返回删除块数(运维口:回收历史分区) */
 	public int deleteVectors(long agentId, String model, KnowledgeType knowledgeType) {
 		return vectorService.deleteByDims(agentId, model, knowledgeType, null);
-	}
-
-	/** 库类型 → 提示词用方言名 */
-	private String dialect(DbType dbType) {
-		return dbType == DbType.MYSQL ? "MySQL" : dbType.name();
-	}
-
-	/** 回源补齐:按知识类型取本行"不在向量里"的字段(QA 答案 / 文档名);行已删则空表 */
-	private Map<String, Object> extra(long agentId, KnowledgeType knowledgeType, long knowledgeId) {
-		switch (knowledgeType) {
-			case QA -> {
-				AgentBizQa qa = agentBizQaService.list(agentId).stream()
-					.filter(row -> row.getId() == knowledgeId)
-					.findFirst()
-					.orElse(null);
-				if (qa != null && StringUtils.hasText(qa.getContent())) {
-					return Map.of("answer", qa.getContent());
-				}
-			}
-			case DOCUMENT -> {
-				AgentBizDocument document = agentBizDocumentService.list(agentId).stream()
-					.filter(row -> row.getId() == knowledgeId)
-					.findFirst()
-					.orElse(null);
-				if (document != null) {
-					return Map.of("name", document.getName());
-				}
-			}
-			default -> {
-				// 表块自足,无需回源
-			}
-		}
-		return Map.of();
-	}
-
-	/** 取 metadata 文本值 */
-	private String metadata(Document hit, String key) {
-		Object value = hit.getMetadata().get(key);
-		return value == null ? null : String.valueOf(value);
-	}
-
-	/** 取 metadata 数值(long) */
-	private long metadataLong(Document hit, String key) {
-		Object value = hit.getMetadata().get(key);
-		return value instanceof Number number ? number.longValue() : 0L;
 	}
 
 	/** 取 agent;不存在抛 404 */
