@@ -199,8 +199,7 @@ function removeChatSession(id) {
     danger: true,
     onConfirm: async () => {
       try {
-        await api('POST', '/graph/stop/' + encodeURIComponent(id)).catch(() => {});
-        await api('DELETE', '/graph/memory/' + encodeURIComponent(id)).catch(() => {});
+        await api('POST', '/agent/clear/' + encodeURIComponent(id)).catch(() => {});
         await api('DELETE', '/session/' + id);
         if (chatState.sessionId === id) {
           chatState.sessionId = null;
@@ -663,7 +662,7 @@ async function sendChat() {
   input.value = '';
   renderMessages();
   startChatStream(
-    `/graph/run?agentId=${agent.id}&input=${encodeURIComponent(text)}&sessionId=${encodeURIComponent(
+    `/agent/run?agentId=${agent.id}&input=${encodeURIComponent(text)}&sessionId=${encodeURIComponent(
       chatState.sessionId
     )}&planReview=${chatState.planReview}`
   );
@@ -678,14 +677,14 @@ function resumeChatPlan(approved) {
   chatState.planText = '';
   renderFeedbackPanel();
   startChatStream(
-    `/graph/resume?sessionId=${encodeURIComponent(chatState.sessionId)}&approved=${approved}&feedback=${encodeURIComponent(feedback)}`
+    `/agent/resume?sessionId=${encodeURIComponent(chatState.sessionId)}&approved=${approved}&feedback=${encodeURIComponent(feedback)}`
   );
 }
 
 function stopChat() {
   closeChatStream();
   finishChatStream();
-  if (chatState.sessionId) api('POST', '/graph/stop/' + encodeURIComponent(chatState.sessionId)).catch(() => {});
+  if (chatState.sessionId) api('POST', '/agent/clear/' + encodeURIComponent(chatState.sessionId)).catch(() => {});
   // 终止未获得完整输出,不落库;仅本会话内可见提示
   if (chatState.sessionId) {
     chatState.messages.push({ role: 'ASSISTANT', content: '用户已终止本次执行。' });

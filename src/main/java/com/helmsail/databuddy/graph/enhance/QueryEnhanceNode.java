@@ -26,7 +26,7 @@ import lombok.extern.slf4j.Slf4j;
 /**
  * 查询增强节点:用召回的知识把业务语言翻译成数据语言——产出规范查询(指代消解、相对时间换算为
  * 绝对时间、业务术语解析成数据语言)与 2-3 条扩展问法,写 CANONICAL_QUERY / EXPANDED_QUERIES 供下游使用。
- * 输出不可解析或规范查询为空时回退原问题(扩展为空)——增强是质量步,不因它整轮失败;
+ * 调用或输出失败(异常/不可解析/规范查询为空)回退原问题(扩展为空)——增强是质量步,不因它整轮失败;
  * 阻塞的 LLM 调用发生在图订阅线程(boundedElastic)上,不占事件循环
  */
 @Slf4j
@@ -53,17 +53,17 @@ public class QueryEnhanceNode implements AsyncNodeAction {
 	public CompletableFuture<Map<String, Object>> apply(OverAllState state) {
 		String input = state.value(GraphKeys.INPUT, String.class).orElse("");
 		String knowledge = state.value(GraphKeys.KNOWLEDGE, String.class).orElse("无");
-		String history = state.value(GraphKeys.HISTORY, String.class).orElse("(无)");
+		String history = state.value(GraphKeys.SESSION_MEMORY, String.class).orElse("(无)");
 		String user = NodeUtils.renderPrompt(promptMapper, GraphKeys.QUERY_ENHANCE,
 				Map.of("query", input, "knowledge", knowledge, "history", history,
 						"current_time", LocalDateTime.now().format(TIME_FORMAT)));
-		String output = aiModelServiceFactory.getChatClient().prompt().user(user).call().content();
-		return CompletableFuture.completedFuture(parse(input, output));
+		return CompletableFuture.completedFuture(parse(input, user));
 	}
 
-	/** 解析增强结果;不可解析或规范查询为空 → 回退原问题(扩展为空),如实记过程状态 */
-	private Map<String, Object> parse(String input, String output) {
+	/** 调用与解析;调用或解析失败 / 规范查询为空 → 回退原问题(扩展为空),如实记过程状态 */
+	private Map<String, Object> parse(String input, String user) {
 		try {
+			String output = aiModelServiceFactory.getChatClient().prompt().user(user).call().content();
 			JsonNode root = NodeUtils.parseJson(objectMapper, output);
 			String canonical = root.path("canonical_query").asText("");
 			if (StringUtils.hasText(canonical)) {
@@ -75,7 +75,7 @@ public class QueryEnhanceNode implements AsyncNodeAction {
 			log.warn("查询增强规范查询为空,回退原问题: {}", NodeUtils.brief(output));
 		}
 		catch (RuntimeException e) {
-			log.warn("查询增强输出不可解析,回退原问题: {}", e.getMessage());
+			log.warn("查询增强调用或输出不可解析,回退原问题: {}", e.getMessage());
 		}
 		return Map.of(GraphKeys.CANONICAL_QUERY, input, GraphKeys.EXPANDED_QUERIES, List.of(), GraphKeys.NODE_STATUS,
 				"查询增强回退:沿用原问题");

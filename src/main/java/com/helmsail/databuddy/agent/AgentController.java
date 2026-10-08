@@ -4,7 +4,9 @@ import java.util.List;
 import java.util.concurrent.Callable;
 
 import org.springframework.http.MediaType;
+import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.http.codec.multipart.FilePart;
+import org.springframework.http.server.reactive.ServerHttpResponse;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -23,18 +25,21 @@ import com.helmsail.databuddy.agent.biztable.AgentBizTable;
 import com.helmsail.databuddy.agent.bizterm.AgentBizTerm;
 import com.helmsail.databuddy.exception.BusinessException;
 import com.helmsail.databuddy.exception.ErrorCode;
+import com.helmsail.databuddy.graph.GraphSseChunk;
 import com.helmsail.databuddy.memory.AgentMemory;
 import com.helmsail.databuddy.result.ApiResponse;
 import com.helmsail.databuddy.vectorize.KnowledgeType;
 import com.helmsail.databuddy.vectorize.VectorPresence;
 import com.helmsail.databuddy.vectorize.splitter.SplitterType;
 
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
 /**
- * 智能体入口:全部动作薄转发 AgentService(域内唯一门面,含向量分区运维),本类只做 HTTP 层;
+ * 智能体入口(唯一 Controller):全部动作薄转发 AgentService(域内唯一门面,含图执行与向量分区运维),本类只做 HTTP 层;
  * 成功返回统一信封(ApiResponse),错误由全局异常处理器转同形信封。
+ * 图执行(原 GraphController 职能):run / resume 为 SSE,走帧契约不套信封(EventSource 读不到 HTTP 信封);
  * 线程边界:触达模型 / 向量的动作含阻塞式 Spring AI 调用,统一经 reactive/reactiveVoid 移入弹性线程
  * (在 WebFlux 事件循环线程上会被 Reactor 拒绝:block() not supported in thread reactor-http-epoll,已实证)
  */
@@ -102,6 +107,36 @@ public class AgentController {
 	public Mono<ApiResponse<List<RetrievedChunk>>> retrieve(@PathVariable("agentId") long agentId,
 			@RequestParam("query") String query, @RequestParam(name = "topK", defaultValue = "5") int topK) {
 		return reactive(() -> agentService.retrieve(agentId, query, topK));
+	}
+
+	// ============ 图执行(对话:run / resume / stop;SSE 走帧契约,不套信封) ============
+
+	/** 执行入口(SSE):GET /agent/run?agentId=…&input=…&sessionId=…&planReview=false(会话号缺省则生成,随事件回传) */
+	@GetMapping(value = "/run", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+	public Flux<ServerSentEvent<GraphSseChunk>> run(@RequestParam("agentId") long agentId,
+			@RequestParam("input") String input,
+			@RequestParam(value = "sessionId", required = false) String sessionId,
+			@RequestParam(value = "planReview", required = false, defaultValue = "false") boolean planReview,
+			ServerHttpResponse response) {
+		response.getHeaders().add("Cache-Control", "no-cache");
+		return agentService.run(agentId, input, sessionId, planReview, false); // 前端流:普通模式
+	}
+
+	/** 恢复入口(SSE):GET /agent/resume?sessionId=…&approved=true|false&feedback=…(挂起轮的人工确认;新流接上断点续跑) */
+	@GetMapping(value = "/resume", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+	public Flux<ServerSentEvent<GraphSseChunk>> resume(@RequestParam("sessionId") String sessionId,
+			@RequestParam("approved") boolean approved,
+			@RequestParam(value = "feedback", required = false) String feedback,
+			ServerHttpResponse response) {
+		response.getHeaders().add("Cache-Control", "no-cache");
+		return agentService.resume(sessionId, approved, feedback);
+	}
+
+	/** 清图:按会话键(外部停止 = 图废弃:运行现场作废 + 挂起计划取消;级联删除同口;全内存操作+异步释放,无阻塞) */
+	@PostMapping("/clear/{sessionId}")
+	public ApiResponse<Void> clear(@PathVariable("sessionId") String sessionId) {
+		agentService.clear(sessionId);
+		return ApiResponse.success();
 	}
 
 	// ============ 向量分区(vectorize) ============

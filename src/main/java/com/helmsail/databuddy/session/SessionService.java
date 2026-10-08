@@ -10,13 +10,14 @@ import org.springframework.util.StringUtils;
 
 import com.helmsail.databuddy.exception.BusinessException;
 import com.helmsail.databuddy.exception.ErrorCode;
+import com.helmsail.databuddy.memory.MemoryService;
 
 import lombok.extern.slf4j.Slf4j;
 
 /**
- * 会话服务:session 与 session_message 的生命周期(用户侧历史,纯 CRUD)。
+ * 会话服务:session / session_message 的生命周期(用户侧历史,纯 CRUD)与跨图记忆删除联动。
  * 与图零耦合:不读写图侧任何数据;历史写入由客户端编排(存 user → 跑图 → 收尾存 assistant);
- * 删会话的图侧清理由客户端调 graph 接口完成(先停运行 → 清图记忆 → 再删本域数据)
+ * 删会话(客户端先调 /agent/clear 停图运行)连带清该会话跨图记忆:记忆 → 消息 → 会话行
  */
 @Slf4j
 @Service
@@ -32,9 +33,12 @@ public class SessionService {
 
 	private final SessionMessageMapper messageMapper;
 
-	public SessionService(SessionMapper sessionMapper, SessionMessageMapper messageMapper) {
+	private final MemoryService memoryService;
+
+	public SessionService(SessionMapper sessionMapper, SessionMessageMapper messageMapper, MemoryService memoryService) {
 		this.sessionMapper = sessionMapper;
 		this.messageMapper = messageMapper;
+		this.memoryService = memoryService;
 	}
 
 	/** 建会话:生成 UUID 主键并落库(标题由客户端按首条消息传入,压平截断);返回会话行 */
@@ -64,7 +68,7 @@ public class SessionService {
 		return message;
 	}
 
-	/** 硬删会话(级联):先清消息行,再删会话行;不存在幂等成功 */
+	/** 硬删会话(级联):清跨图记忆 → 消息 → 会话行;不存在幂等成功 */
 	@Transactional
 	public void deleteSession(String sessionId) {
 		deleteOne(sessionId);
@@ -92,8 +96,9 @@ public class SessionService {
 		return page;
 	}
 
-	/** 单会话清库:消息 → 会话行 */
+	/** 单会话清库:跨图记忆 → 消息 → 会话行 */
 	private void deleteOne(String sessionId) {
+		memoryService.deleteBySession(sessionId);
 		messageMapper.deleteBySession(sessionId);
 		sessionMapper.deleteById(sessionId);
 	}

@@ -28,7 +28,7 @@ import lombok.extern.slf4j.Slf4j;
  * 业务知识召回节点:数据链首节点(意图识别分流的 data_analysis 去向)。
  * 先把问题结合对话历史重写成可独立理解的查询,再向量召回知识源(术语/问答/文档;
  * 表块留给后续 Schema 召回节点),格式化为带来源标注的知识文本写入 KNOWLEDGE;无命中为"无",不阻塞下游。
- * 重写失败(输出不可解析/为空)回退原问题检索——知识召回是增强步,不因它整轮失败;
+ * 重写调用或输出失败(异常/不可解析/为空)回退原问题检索——知识召回是增强步,不因它整轮失败;
  * 阻塞的 LLM 与检索调用发生在图订阅线程(boundedElastic)上,不占事件循环
  */
 @Slf4j
@@ -62,7 +62,7 @@ public class KnowledgeRecallNode implements AsyncNodeAction {
 	@Observed(name = "node.knowledgeRecall", contextualName = "知识召回")
 	public CompletableFuture<Map<String, Object>> apply(OverAllState state) {
 		String input = state.value(GraphKeys.INPUT, String.class).orElse("");
-		String history = state.value(GraphKeys.HISTORY, String.class).orElse("(无)");
+		String history = state.value(GraphKeys.SESSION_MEMORY, String.class).orElse("(无)");
 		long agentId = NodeUtils.longOf(state, GraphKeys.AGENT_ID);
 		String query = rewrite(input, history);
 		List<RetrievedChunk> hits = new ArrayList<>();
@@ -74,12 +74,12 @@ public class KnowledgeRecallNode implements AsyncNodeAction {
 				hits.isEmpty() ? "知识召回完成:未命中相关知识" : "知识召回完成:命中 " + hits.size() + " 条"));
 	}
 
-	/** 结合历史重写为独立查询;输出不可解析或为空时回退原问题(检索仍可命中) */
+	/** 结合历史重写为独立查询;调用或输出失败(异常/不可解析/为空)回退原问题(检索仍可命中) */
 	private String rewrite(String input, String history) {
-		String user = NodeUtils.renderPrompt(promptMapper, GraphKeys.KNOWLEDGE_RECALL,
-				Map.of("query", input, "history", history));
-		String output = aiModelServiceFactory.getChatClient().prompt().user(user).call().content();
 		try {
+			String user = NodeUtils.renderPrompt(promptMapper, GraphKeys.KNOWLEDGE_RECALL,
+					Map.of("query", input, "history", history));
+			String output = aiModelServiceFactory.getChatClient().prompt().user(user).call().content();
 			JsonNode root = NodeUtils.parseJson(objectMapper, output);
 			String standalone = root.path("standalone_query").asText("");
 			if (StringUtils.hasText(standalone)) {
@@ -88,7 +88,7 @@ public class KnowledgeRecallNode implements AsyncNodeAction {
 			log.warn("重写结果为空,回退原问题检索: {}", NodeUtils.brief(output));
 		}
 		catch (RuntimeException e) {
-			log.warn("重写输出不可解析,回退原问题检索: {}", e.getMessage());
+			log.warn("重写调用或输出不可解析,回退原问题检索: {}", e.getMessage());
 		}
 		return input;
 	}

@@ -13,7 +13,7 @@ import lombok.NoArgsConstructor;
  * 1) HTTP 状态码严格语义化(不搞"恒 200");success 与状态码恒一致,供前端做统一判别位;
  * 2) 所有 JSON 端点(含文件上传)一律包信封;分页响应的 data 为标准分页载荷 {@link PageResult};
  * 3) 失败只由全局异常处理器(GlobalExceptionHandler)产出,业务代码只抛 BusinessException,不手搓失败体;
- * 4) 通道边界:SSE(/graph/run、/graph/resume)走帧契约、MCP(/mcp)走协议自有形状,均不套本信封;
+ * 4) 通道边界:SSE(/agent/run、/agent/resume)走帧契约、MCP(/mcp)走协议自有形状,均不套本信封;
  *    唯 SSE 端点开流前的 HTTP 错误体仍为本信封形状;
  * 5) 错误码演进位:暂不加 code/traceId 字段(三码 + message 够用),将来加字段向后兼容。
  *

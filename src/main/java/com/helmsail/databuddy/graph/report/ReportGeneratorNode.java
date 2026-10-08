@@ -68,7 +68,11 @@ public class ReportGeneratorNode implements AsyncNodeAction {
 			.toolContext(Map.of(AgentMemoryTools.AGENT_ID_KEY, agentId))
 			.call()
 			.content();
-		log.info("报告生成完成: {} 字符", report == null ? 0 : report.length());
+		if (!StringUtils.hasText(report)) { // 模型只调工具(如沉淀记忆)或空产出时 content() 为 null:占位语收尾,不因末段环节整轮失败
+			log.warn("报告生成返回空文本,以占位语收尾");
+			report = "本轮未产出报告正文,可查看上方的执行过程与结果。";
+		}
+		log.info("报告生成完成: {} 字符", report.length());
 		return CompletableFuture.completedFuture(Map.of(GraphKeys.FINAL_ANSWER, report, GraphKeys.NODE_STATUS,
 				"报告生成完成"));
 	}

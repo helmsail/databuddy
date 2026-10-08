@@ -48,7 +48,7 @@ public class IntentRecognitionNode implements AsyncNodeAction {
 	@Observed(name = "node.intentRecognition", contextualName = "意图识别")
 	public CompletableFuture<Map<String, Object>> apply(OverAllState state) {
 		String input = state.value(GraphKeys.INPUT, String.class).orElse("");
-		String history = state.value(GraphKeys.HISTORY, String.class).orElse("(无)");
+		String history = state.value(GraphKeys.SESSION_MEMORY, String.class).orElse("(无)");
 		String memory = state.value(GraphKeys.AGENT_MEMORY, String.class).orElse("(无)");
 		String user = NodeUtils.renderPrompt(promptMapper, GraphKeys.INTENT_RECOGNITION,
 				Map.of("query", input, "history", history, "agent_memory", memory));

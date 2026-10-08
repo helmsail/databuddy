@@ -20,7 +20,7 @@ import lombok.extern.slf4j.Slf4j;
 /**
  * 计划确认节点(人工确认闸):计划执行前的唯一拦截点,靠图级 interruptBefore 静态中断挂起,
  * 恢复时由 GraphService 把决定写进 PLAN_REVIEW_DECISION 后从断点续跑到本节点。
- * 批准:关掉开关(后续步不再拦)转枢纽;否决:计数 +1 带意见打回规划重写,超限终止语收场。
+ * 批准:关掉开关(后续步不再拦)转枢纽;否决:计数 +1 带意见打回规划重写(旧计划保留供参考,与枢纽校验打回一致),超限终止语收场。
  * 本节点零 LLM、零阻塞
  */
 @Slf4j
@@ -56,8 +56,8 @@ public class PlanReviewNode implements AsyncNodeAction {
 		}
 		log.info("计划被否决(第 {} 次),重新规划: {}", count, feedback);
 		return CompletableFuture.completedFuture(Map.of(GraphKeys.PLAN_REPAIR_COUNT, count, GraphKeys.PLAN_REPAIR_REASON,
-				StringUtils.hasText(feedback) ? feedback : "用户否决了计划", GraphKeys.PLAN_STEP, 1, GraphKeys.PLAN_JSON,
-				"", GraphKeys.PLAN_REVIEW_ENABLED, true, GraphKeys.PLAN_NEXT, GraphKeys.PLANNER, GraphKeys.NODE_STATUS,
+				StringUtils.hasText(feedback) ? feedback : "用户否决了计划", GraphKeys.PLAN_STEP, 1,
+				GraphKeys.PLAN_REVIEW_ENABLED, true, GraphKeys.PLAN_NEXT, GraphKeys.PLANNER, GraphKeys.NODE_STATUS,
 				"计划已被否决:重新规划"));
 	}
 

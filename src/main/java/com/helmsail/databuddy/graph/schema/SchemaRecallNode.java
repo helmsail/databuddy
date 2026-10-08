@@ -1,6 +1,7 @@
 package com.helmsail.databuddy.graph.schema;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
@@ -20,7 +21,7 @@ import com.helmsail.databuddy.vectorize.KnowledgeType;
 import lombok.extern.slf4j.Slf4j;
 
 /**
- * Schema 召回节点:数据链第三节点。用规范查询向量召回 agent 绑定的表块(表名+注释+全列,块自足),
+ * Schema 召回节点:数据链第三节点。用规范查询 + 扩展问法多路向量召回 agent 绑定的表块(按表名去重,块自足),
  * 拼接为 SCHEMA 文本、解析出表名写 RECALLED_TABLES;纯检索,不调 LLM。
  * 未命中:写终止语到 FINAL_ANSWER(经既有 END 机制播报给用户)与过程状态,流程收束;
  * 阻塞的检索调用发生在图订阅线程(boundedElastic)上,不占事件循环
@@ -48,16 +49,44 @@ public class SchemaRecallNode implements AsyncNodeAction {
 		String canonical = state.value(GraphKeys.CANONICAL_QUERY, String.class)
 			.orElse(state.value(GraphKeys.INPUT, String.class).orElse(""));
 		long agentId = NodeUtils.longOf(state, GraphKeys.AGENT_ID);
-		List<RetrievedChunk> tables = agentService.retrieve(agentId, canonical, TOP_K, KnowledgeType.TABLE);
+		List<String> queryList = queries(state, canonical);
+		List<RetrievedChunk> tables = recall(agentId, queryList);
 		if (tables.isEmpty()) {
 			log.warn("Schema 召回未命中: agent={}, 查询=\"{}\"", agentId, canonical);
 			return CompletableFuture.completedFuture(Map.of(GraphKeys.SCHEMA, "无", GraphKeys.RECALLED_TABLES, List.of(),
 					GraphKeys.NODE_STATUS, "Schema 召回未命中:未检索到相关数据表", GraphKeys.FINAL_ANSWER, NO_TABLE_MESSAGE));
 		}
 		List<String> names = names(tables);
-		log.info("Schema 召回: agent={}, 命中 {} 张表: {}", agentId, tables.size(), names);
+		log.info("Schema 召回: agent={}, {} 路查询命中 {} 张表: {}", agentId, queryList.size(), tables.size(), names);
 		return CompletableFuture.completedFuture(Map.of(GraphKeys.SCHEMA, join(tables), GraphKeys.RECALLED_TABLES, names,
 				GraphKeys.NODE_STATUS, note(tables.size(), names)));
+	}
+
+	/** 检索查询组:规范查询 + 扩展问法(去重,规范查询优先;无扩展时单路) */
+	private List<String> queries(OverAllState state, String canonical) {
+		List<String> queries = new ArrayList<>();
+		queries.add(canonical);
+		for (String expanded : NodeUtils.stringList(state, GraphKeys.EXPANDED_QUERIES)) {
+			if (!queries.contains(expanded)) {
+				queries.add(expanded);
+			}
+		}
+		return queries;
+	}
+
+	/** 多路召回并按表名归并(先到先得;总张数不超 TOP_K,已满不再消耗后续查询) */
+	private List<RetrievedChunk> recall(long agentId, List<String> queries) {
+		Map<String, RetrievedChunk> merged = new LinkedHashMap<>();
+		for (String query : queries) {
+			for (RetrievedChunk table : agentService.retrieve(agentId, query, TOP_K, KnowledgeType.TABLE)) {
+				String name = NodeUtils.parseTableName(table.getContent());
+				merged.putIfAbsent(name == null ? table.getContent() : name, table);
+			}
+			if (merged.size() >= TOP_K) {
+				break;
+			}
+		}
+		return merged.values().stream().limit(TOP_K).toList();
 	}
 
 	/** 各块内容拼接为 schema 文本(块自足:表名+注释+全列,零加工) */

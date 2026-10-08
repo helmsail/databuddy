@@ -7,6 +7,7 @@ import java.util.concurrent.CompletableFuture;
 import io.micrometer.observation.annotation.Observed;
 
 import org.springframework.stereotype.Component;
+import org.springframework.util.StringUtils;
 
 import com.alibaba.cloud.ai.graph.OverAllState;
 import com.alibaba.cloud.ai.graph.action.AsyncNodeAction;
@@ -21,7 +22,7 @@ import lombok.extern.slf4j.Slf4j;
 /**
  * Python 分析节点(Python 组质检):执行后审"结果对不对"——SQL 组的反思在执行前(SQL 文本),
  * Python 组的反思在执行后(产出结果),这正是两组对称的质检点差异。
- * 分析文本写 PYTHON_ANALYSIS 与 STEP_RESULTS[step_N_analysis] 供报告引用;
+ * 分析文本写 STEP_RESULTS[step_N_analysis] 供报告引用,模型空产出以占位语兜底(不因末段环节整轮失败);
  * 步号在此 +1(SQL 组的步号推进在 SQL 执行成功时,各自收口)。
  * 阻塞的 LLM 调用发生在图订阅线程(boundedElastic)上,不占事件循环
  */
@@ -47,11 +48,15 @@ public class PythonAnalyzeNode implements AsyncNodeAction {
 		String user = NodeUtils.renderPrompt(promptMapper, GraphKeys.PYTHON_ANALYZE,
 				Map.of("canonical_query", canonical, "python_output", pythonOutput));
 		String analysis = aiModelServiceFactory.getChatClient().prompt().user(user).call().content();
+		if (!StringUtils.hasText(analysis)) { // 空产出进 Map.of 会 NPE,也防报告只见空白小节
+			log.warn("Python 分析返回空文本,以占位语入报告");
+			analysis = "本轮未产出分析文本。";
+		}
 		int step = NodeUtils.intOf(state, GraphKeys.PLAN_STEP, 1);
 		Map<String, String> results = PlanUtils.withEntry(stepResults(state), "step_" + step + "_analysis", analysis);
 		log.info("Python 分析完成: 第 {} 步", step);
-		return CompletableFuture.completedFuture(Map.of(GraphKeys.PYTHON_ANALYSIS, analysis, GraphKeys.STEP_RESULTS, results,
-				GraphKeys.PLAN_STEP, step + 1, GraphKeys.PYTHON_ATTEMPT, 0, GraphKeys.NODE_STATUS, "Python 分析完成"));
+		return CompletableFuture.completedFuture(Map.of(GraphKeys.STEP_RESULTS, results, GraphKeys.PLAN_STEP, step + 1,
+				GraphKeys.PYTHON_ATTEMPT, 0, GraphKeys.NODE_STATUS, "Python 分析完成"));
 	}
 
 	/** 分步结果累积(整表回写:REPLACE 键语义) */

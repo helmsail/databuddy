@@ -8,7 +8,9 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 import org.springframework.ai.document.Document;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.context.event.EventListener;
+import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.http.codec.multipart.FilePart;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -29,6 +31,8 @@ import com.helmsail.databuddy.bizdatabase.BizTableRelation;
 import com.helmsail.databuddy.bizdatabase.jdbc.config.DbType;
 import com.helmsail.databuddy.exception.BusinessException;
 import com.helmsail.databuddy.exception.ErrorCode;
+import com.helmsail.databuddy.graph.GraphService;
+import com.helmsail.databuddy.graph.GraphSseChunk;
 import com.helmsail.databuddy.memory.AgentMemory;
 import com.helmsail.databuddy.memory.MemoryService;
 import com.helmsail.databuddy.session.Session;
@@ -40,13 +44,15 @@ import com.helmsail.databuddy.vectorize.VectorService;
 import com.helmsail.databuddy.vectorize.splitter.SplitterType;
 
 import lombok.extern.slf4j.Slf4j;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 /**
- * 智能体服务:agent 域的唯一对外口(身份 + 跨域横切 + 检索用例 + 知识子域全量门面);域外(含 HTTP 层)只认本类。
+ * 智能体服务:agent 域的唯一对外口(身份 + 图执行 + 跨域横切 + 检索用例 + 知识子域全量门面);域外(含 HTTP 层)只认本类。
+ * 图执行:run / resume / clear 薄转发 GraphService(图节点反向依赖本服务,注入以 @Lazy 断环;agent 存在性校验在此前置);
  * 知识子域操作(表 / 术语 / 问答 / 文档 / 记忆 / 向量盘点)全部薄转发,逻辑归各子域 Service,本类不加工;
  * 检索:跨四类来源向量命中 + 按来源回源补齐(QA 补答案、文档补名称;术语/表块内容自足);
- * 级联删除:四域逐行清(行 + 向量 + 物理文件)+ 会话域(行 + 消息 + 跨图记忆/摘要)+ agent 沉淀记忆 → 向量兜底清扫 → 删 agent 行;
+ * 级联删除:四域逐行清(行 + 向量 + 物理文件)+ 会话域(行 + 消息 + 跨图记忆/摘要)+ agent 沉淀记忆 → 向量兜底清扫 → 删 agent 行 → 停图运行 + 释放检查点;
  * 模型切换事件:术语 / 问答 / 文档已同步行标记失效(原因=切换),交重试管线在新分区重建;表域无状态字段,由人工刷新入口覆盖
  */
 @Slf4j
@@ -71,10 +77,14 @@ public class AgentService {
 
 	private final BizDatabaseService bizDatabaseService;
 
+	/** 图执行(惰性 @Lazy 断环:图节点反向依赖本服务,构造直连会成环) */
+	private final GraphService graphService;
+
 	public AgentService(AgentMapper agentMapper, AgentBizTableService agentBizTableService,
 			AgentBizTermService agentBizTermService, AgentBizQaService agentBizQaService,
 			AgentBizDocumentService agentBizDocumentService, MemoryService memoryService,
-			SessionService sessionService, VectorService vectorService, BizDatabaseService bizDatabaseService) {
+			SessionService sessionService, VectorService vectorService, BizDatabaseService bizDatabaseService,
+			@Lazy GraphService graphService) {
 		this.agentMapper = agentMapper;
 		this.agentBizTableService = agentBizTableService;
 		this.agentBizTermService = agentBizTermService;
@@ -84,6 +94,7 @@ public class AgentService {
 		this.sessionService = sessionService;
 		this.vectorService = vectorService;
 		this.bizDatabaseService = bizDatabaseService;
+		this.graphService = graphService;
 	}
 
 	/** 全部智能体(新加的在前) */
@@ -114,7 +125,7 @@ public class AgentService {
 		return agentMapper.selectById(id);
 	}
 
-	/** 删除智能体(级联):四域逐行清(行 + 向量 + 物理文件)+ 会话域(行 + 消息 + 跨图记忆/摘要)+ agent 沉淀记忆 → 向量兜底清扫 → 删 agent 行 */
+	/** 删除智能体(级联):四域逐行清(行 + 向量 + 物理文件)→ 停图运行 / 释放检查点 → 会话域(行 + 消息 + 跨图记忆/摘要)+ agent 沉淀记忆 → 向量兜底清扫 → 删 agent 行 */
 	@Transactional
 	public void delete(long id) {
 		Agent agent = requireAgent(id);
@@ -131,14 +142,37 @@ public class AgentService {
 		for (AgentBizDocument document : agentBizDocumentService.list(id)) {
 			agentBizDocumentService.delete(id, document.getId());
 		}
-		for (Session session : sessionService.listSessions(id)) {
-			memoryService.deleteBySession(session.getId());   // 跨图记忆 + 摘要(先于会话删除,防孤儿)
-		}
-		sessionService.deleteSessionsByAgent(id);   // 会话域:行 + 消息
+		List<String> sessionIds = sessionService.listSessions(id).stream().map(Session::getId).toList();   // 删前收集会话键
+		sessionIds.forEach(graphService::clear);   // 图域:先废弃图(停现场 + 释放检查点,幂等;防跑完写回幽灵记忆)
+		sessionService.deleteSessionsByAgent(id);   // 会话域:行 + 消息 + 跨图记忆/摘要(随删联动)
 		memoryService.deleteByAgent(id);   // agent 沉淀记忆
 		vectorService.deleteByDims(id, null, null, null);   // 兜底:清残留向量(防历史脏数据)
 		agentMapper.deleteById(id);
 		log.info("agent 删除(级联): {} (#{})", agent.getName(), id);
+	}
+
+	// ============ 图执行(agent 核心能力:HTTP 入口在 AgentController,编排走 GraphService) ============
+
+	/** 发起执行(SSE,唯一入口):先校验 agent(失败以流内 error 帧回传);nl2sqlMode = 轻档(MCP 同口,图内按参数决定走法) */
+	public Flux<ServerSentEvent<GraphSseChunk>> run(long agentId, String input, String sessionId, boolean planReview,
+			boolean nl2sqlMode) {
+		try {
+			requireAgent(agentId);
+		}
+		catch (BusinessException e) {
+			return Flux.just(GraphSseChunk.errorFrame(sessionId, e.getMessage()));
+		}
+		return graphService.run(agentId, input, sessionId, planReview, nl2sqlMode);
+	}
+
+	/** 恢复挂起轮(SSE):校验与断点续跑全在 GraphService(检查点域) */
+	public Flux<ServerSentEvent<GraphSseChunk>> resume(String sessionId, boolean approved, String feedback) {
+		return graphService.resume(sessionId, approved, feedback);
+	}
+
+	/** 清某会话的图(外部停止 = 图废弃:现场作废 + 检查点释放;级联删除同口;幂等) */
+	public void clear(String sessionId) {
+		graphService.clear(sessionId);
 	}
 
 	/** EMBEDDING 模型切换(事件):把每个 agent 三类知识(术语 / 问答 / 文档)的已同步行标记失败(原因=模型切换),交手动重试与定时任务在新分区重建;表域无状态字段,由人工刷新入口覆盖;旧分区向量保留,切回即恢复 */

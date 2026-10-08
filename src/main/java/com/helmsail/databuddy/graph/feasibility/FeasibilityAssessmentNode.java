@@ -56,7 +56,7 @@ public class FeasibilityAssessmentNode implements AsyncNodeAction {
 		String schema = state.value(GraphKeys.SCHEMA, String.class).orElse("无");
 		String relations = state.value(GraphKeys.TABLE_RELATIONS, String.class).orElse("无");
 		String knowledge = state.value(GraphKeys.KNOWLEDGE, String.class).orElse("无");
-		String history = state.value(GraphKeys.HISTORY, String.class).orElse("(无)");
+		String history = state.value(GraphKeys.SESSION_MEMORY, String.class).orElse("(无)");
 		String user = NodeUtils.renderPrompt(promptMapper, GraphKeys.FEASIBILITY_ASSESSMENT,
 				Map.of("canonical_query", canonical, "schema", schema, "relations", relations, "knowledge", knowledge,
 						"history", history));

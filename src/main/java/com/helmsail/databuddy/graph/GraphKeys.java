@@ -86,8 +86,8 @@ public final class GraphKeys {
 	/** 本轮对话的 agent(数据链身份轴;入口校验后注入) */
 	public static final String AGENT_ID = "agent_id";
 
-	/** 上文(进图前由记忆构建注入) */
-	public static final String HISTORY = "history";
+	/** 会话记忆文本(进图前由 MemoryService 构建注入;含历史轮次与压缩摘要) */
+	public static final String SESSION_MEMORY = "session_memory";
 
 	/** 智能体沉淀记忆清单(进图前构建注入;每行"序号. [id=主键] 内容";无记忆为"(无)") */
 	public static final String AGENT_MEMORY = "agent_memory";
@@ -104,7 +104,7 @@ public final class GraphKeys {
 	/** 规范查询:业务翻译后的完整查询(指代消解、绝对时间、术语已解析;回退时为原问题) */
 	public static final String CANONICAL_QUERY = "canonical_query";
 
-	/** 扩展问法列表(供下游检索;回退时为空表) */
+	/** 扩展问法列表(查询增强产出;Schema 召回据此多路检索;回退时为空表) */
 	public static final String EXPANDED_QUERIES = "expanded_queries";
 
 	/** 召回的表结构文本(表块内容拼接;未命中为"无") */
@@ -161,11 +161,8 @@ public final class GraphKeys {
 	/** 最近一次 SQL 执行结果 JSON(执行节点写;Python 执行节点据此组装 input.json) */
 	public static final String SQL_RESULT = "sql_result";
 
-	/** 语义一致性结果(校验节点写,分流器读) */
+	/** 语义一致性结果(校验节点写,分流器读;未通过原因写 SQL_REPAIR_REASON 打回生成) */
 	public static final String SEMANTIC_PASSED = "semantic_passed";
-
-	/** 语义一致性未通过原因 */
-	public static final String SEMANTIC_REASON = "semantic_reason";
 
 	/** 当前 Python 代码(生成节点写;执行节点读) */
 	public static final String PYTHON_CODE = "python_code";
@@ -176,22 +173,13 @@ public final class GraphKeys {
 	/** Python 组去向标记(组内节点写,分流器读):analyze / regenerate / replan / end */
 	public static final String PYTHON_NEXT = "python_next";
 
-	/** Python 执行是否失败(Boolean) */
-	public static final String PYTHON_FAILED = "python_failed";
-
 	/** Python 失败原因(执行失败/超时/无产出;注入重写提示词) */
 	public static final String PYTHON_FAIL_REASON = "python_fail_reason";
 
 	/** Python 标准输出(stdout,约定的 JSON 结果) */
 	public static final String PYTHON_RESULT = "python_result";
 
-	/** Python 产物清单文本(/work/output 下文件名与大小;无产物为"无") */
-	public static final String PYTHON_FILES = "python_files";
-
-	/** Python 结果分析文本(分析节点写;报告节点引用) */
-	public static final String PYTHON_ANALYSIS = "python_analysis";
-
-	/** 分步结果累积(Map<String,String>;step_N = 结果 JSON,step_N_analysis = 分析文本) */
+	/** 分步结果累积(Map<String,String>;step_N = 结果文本(SQL 结果 JSON / Python stdout 及产出清单),step_N_analysis = 分析文本) */
 	public static final String STEP_RESULTS = "step_results";
 
 	// —— 意图分类取值(意图识别节点的产出) ——

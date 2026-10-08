@@ -54,8 +54,8 @@ public class SemanticConsistencyNode implements AsyncNodeAction {
 		String sql = state.value(GraphKeys.SQL_QUERY, String.class).orElse("");
 		if (!StringUtils.hasText(sql)) {
 			log.warn("语义一致性收到空 SQL,打回生成");
-			return CompletableFuture.completedFuture(Map.of(GraphKeys.SEMANTIC_PASSED, false, GraphKeys.SEMANTIC_REASON,
-					"SQL 为空", GraphKeys.SQL_REPAIR_REASON, "SQL 为空", GraphKeys.NODE_STATUS, "语义一致性未通过:SQL 为空"));
+			return CompletableFuture.completedFuture(Map.of(GraphKeys.SEMANTIC_PASSED, false, GraphKeys.SQL_REPAIR_REASON,
+					"SQL 为空", GraphKeys.NODE_STATUS, "语义一致性未通过:SQL 为空"));
 		}
 		long agentId = NodeUtils.longOf(state, GraphKeys.AGENT_ID);
 		AgentService.DatabaseTarget target = agentService.databaseTargetOf(agentId,
@@ -79,16 +79,14 @@ public class SemanticConsistencyNode implements AsyncNodeAction {
 			String reason = root.path("reason").asText("");
 			log.info("语义一致性: passed={}, reason={}", passed, reason);
 			if (passed) {
-				return Map.of(GraphKeys.SEMANTIC_PASSED, true, GraphKeys.SEMANTIC_REASON, "", GraphKeys.NODE_STATUS,
-						"语义一致性校验通过");
+				return Map.of(GraphKeys.SEMANTIC_PASSED, true, GraphKeys.NODE_STATUS, "语义一致性校验通过");
 			}
-			return Map.of(GraphKeys.SEMANTIC_PASSED, false, GraphKeys.SEMANTIC_REASON, reason, GraphKeys.SQL_REPAIR_REASON,
-					"语义一致性未通过: " + reason, GraphKeys.NODE_STATUS, "语义一致性校验未通过:重新生成 SQL");
+			return Map.of(GraphKeys.SEMANTIC_PASSED, false, GraphKeys.SQL_REPAIR_REASON, "语义一致性未通过: " + reason,
+					GraphKeys.NODE_STATUS, "语义一致性校验未通过:重新生成 SQL");
 		}
 		catch (RuntimeException e) {
 			log.warn("语义一致性校验调用或解析失败,按通过放行: {}", e.getMessage());
-			return Map.of(GraphKeys.SEMANTIC_PASSED, true, GraphKeys.SEMANTIC_REASON, "", GraphKeys.NODE_STATUS,
-					"语义一致性校验回退:未能判定,按通过继续");
+			return Map.of(GraphKeys.SEMANTIC_PASSED, true, GraphKeys.NODE_STATUS, "语义一致性校验回退:未能判定,按通过继续");
 		}
 	}
 

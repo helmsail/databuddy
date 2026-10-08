@@ -76,7 +76,8 @@ public class GraphConfig {
 		KeyStrategyFactory keyStrategyFactory = () -> Map.ofEntries(
 				Map.entry(GraphKeys.INPUT, KeyStrategy.REPLACE),
 				Map.entry(GraphKeys.AGENT_ID, KeyStrategy.REPLACE),
-				Map.entry(GraphKeys.HISTORY, KeyStrategy.REPLACE),
+				Map.entry(GraphKeys.SESSION_MEMORY, KeyStrategy.REPLACE),
+				Map.entry(GraphKeys.AGENT_MEMORY, KeyStrategy.REPLACE),
 				Map.entry(GraphKeys.FINAL_ANSWER, KeyStrategy.REPLACE),
 				Map.entry(GraphKeys.CLASSIFICATION, KeyStrategy.REPLACE),
 				Map.entry(GraphKeys.KNOWLEDGE, KeyStrategy.REPLACE),
@@ -101,15 +102,11 @@ public class GraphConfig {
 				Map.entry(GraphKeys.SQL_REPAIR_REASON, KeyStrategy.REPLACE),
 				Map.entry(GraphKeys.SQL_RESULT, KeyStrategy.REPLACE),
 				Map.entry(GraphKeys.SEMANTIC_PASSED, KeyStrategy.REPLACE),
-				Map.entry(GraphKeys.SEMANTIC_REASON, KeyStrategy.REPLACE),
 				Map.entry(GraphKeys.PYTHON_CODE, KeyStrategy.REPLACE),
 				Map.entry(GraphKeys.PYTHON_ATTEMPT, KeyStrategy.REPLACE),
 				Map.entry(GraphKeys.PYTHON_NEXT, KeyStrategy.REPLACE),
-				Map.entry(GraphKeys.PYTHON_FAILED, KeyStrategy.REPLACE),
 				Map.entry(GraphKeys.PYTHON_FAIL_REASON, KeyStrategy.REPLACE),
 				Map.entry(GraphKeys.PYTHON_RESULT, KeyStrategy.REPLACE),
-				Map.entry(GraphKeys.PYTHON_FILES, KeyStrategy.REPLACE),
-				Map.entry(GraphKeys.PYTHON_ANALYSIS, KeyStrategy.REPLACE),
 				Map.entry(GraphKeys.STEP_RESULTS, KeyStrategy.REPLACE));
 		return new StateGraph("databuddy", keyStrategyFactory)
 			// 拓扑:入口 → 意图识别 → 按分类分流(chat → 终点;data_analysis → 知识召回)

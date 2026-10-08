@@ -21,7 +21,7 @@ import lombok.extern.slf4j.Slf4j;
 
 /**
  * Python 执行节点:把生成代码与数据素材(input.json = 最近一次 SQL 结果契约 JSON)交给沙箱运行。
- * 成功(stdout JSON 或 /work/output 产物):stdout 写 PYTHON_RESULT 与 STEP_RESULTS[step_N],转分析;
+ * 成功(stdout JSON 或 /work/output 产物):stdout 写 PYTHON_RESULT 与 STEP_RESULTS[step_N](产物清单随其后,报告可见),转分析;
  * 失败(代码错/超时/无产出):原因写 PYTHON_FAIL_REASON 打回生成重写;尝试超限走升级阶梯:
  * 全局重规划 ≤ MAX_PLAN_REPAIR 次,再超限终止语收场。
  * 阻塞的沙箱调用发生在图订阅线程(boundedElastic)上,不占事件循环
@@ -63,12 +63,12 @@ public class PythonExecuteNode implements AsyncNodeAction {
 		}
 		int step = NodeUtils.intOf(state, GraphKeys.PLAN_STEP, 1);
 		String stdout = result.stdout() == null ? "" : result.stdout();
-		Map<String, String> results = PlanUtils.withEntry(stepResults(state), "step_" + step, stdout);
 		String files = filesText(result);
+		Map<String, String> results = PlanUtils.withEntry(stepResults(state), "step_" + step, withFiles(stdout, files));
 		log.info("Python 执行成功: 第 {} 步, stdout {} 字符, 产物: {}", step, stdout.length(), files);
-		return CompletableFuture.completedFuture(Map.of(GraphKeys.PYTHON_FAILED, false, GraphKeys.PYTHON_RESULT, stdout,
-				GraphKeys.PYTHON_FILES, files, GraphKeys.PYTHON_FAIL_REASON, "", GraphKeys.PYTHON_NEXT, "analyze",
-				GraphKeys.STEP_RESULTS, results, GraphKeys.NODE_STATUS, "Python 执行完成:" + filesNote(result)));
+		return CompletableFuture.completedFuture(Map.of(GraphKeys.PYTHON_RESULT, stdout, GraphKeys.PYTHON_FAIL_REASON, "",
+				GraphKeys.PYTHON_NEXT, "analyze", GraphKeys.STEP_RESULTS, results, GraphKeys.NODE_STATUS,
+				"Python 执行完成:" + filesNote(result)));
 	}
 
 	/** 失败:未超限打回生成(带原因);超限升级重规划,再超限终止语收场 */
@@ -78,15 +78,15 @@ public class PythonExecuteNode implements AsyncNodeAction {
 		if (attempt >= MAX_PYTHON_ATTEMPT) {
 			int count = NodeUtils.intOf(state, GraphKeys.PLAN_REPAIR_COUNT, 0) + 1;
 			if (count > PlanUtils.MAX_PLAN_REPAIR) {
-				return Map.of(GraphKeys.PYTHON_FAILED, true, GraphKeys.PYTHON_FAIL_REASON, reason, GraphKeys.PYTHON_NEXT,
-						"end", GraphKeys.FINAL_ANSWER, TERMINATION, GraphKeys.NODE_STATUS, "Python 组重试超限且重规划超限:终止");
+				return Map.of(GraphKeys.PYTHON_FAIL_REASON, reason, GraphKeys.PYTHON_NEXT, "end", GraphKeys.FINAL_ANSWER,
+						TERMINATION, GraphKeys.NODE_STATUS, "Python 组重试超限且重规划超限:终止");
 			}
-			return Map.of(GraphKeys.PYTHON_FAILED, true, GraphKeys.PYTHON_FAIL_REASON, reason, GraphKeys.PYTHON_NEXT,
-					"replan", GraphKeys.PLAN_REPAIR_COUNT, count, GraphKeys.PLAN_REPAIR_REASON, "Python 组多次失败: " + reason,
-					GraphKeys.PLAN_STEP, 1, GraphKeys.PYTHON_ATTEMPT, 0, GraphKeys.NODE_STATUS, "Python 组重试超限:升级重规划");
+			return Map.of(GraphKeys.PYTHON_FAIL_REASON, reason, GraphKeys.PYTHON_NEXT, "replan", GraphKeys.PLAN_REPAIR_COUNT,
+					count, GraphKeys.PLAN_REPAIR_REASON, "Python 组多次失败: " + reason, GraphKeys.PLAN_STEP, 1,
+					GraphKeys.PYTHON_ATTEMPT, 0, GraphKeys.NODE_STATUS, "Python 组重试超限:升级重规划");
 		}
-		return Map.of(GraphKeys.PYTHON_FAILED, true, GraphKeys.PYTHON_FAIL_REASON, reason, GraphKeys.PYTHON_NEXT,
-				"regenerate", GraphKeys.NODE_STATUS, "Python 执行失败,重新生成");
+		return Map.of(GraphKeys.PYTHON_FAIL_REASON, reason, GraphKeys.PYTHON_NEXT, "regenerate", GraphKeys.NODE_STATUS,
+				"Python 执行失败,重新生成");
 	}
 
 	/** 失败原因:分类(stderr 截断)——写进重写提示词供"带原文改" */
@@ -114,6 +114,11 @@ public class PythonExecuteNode implements AsyncNodeAction {
 			text.append(file.name()).append(" (").append(file.content().length).append(" B)");
 		}
 		return text.toString();
+	}
+
+	/** 步结果文本:stdout 附产出文件清单(无产物为原文;随 STEP_RESULTS 进报告) */
+	private String withFiles(String stdout, String files) {
+		return "无".equals(files) ? stdout : stdout + "\n[产出文件] " + files;
 	}
 
 	/** 播报里的产物部分 */

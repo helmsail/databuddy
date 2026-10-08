@@ -1,5 +1,7 @@
 package com.helmsail.databuddy.graph;
 
+import org.springframework.http.codec.ServerSentEvent;
+
 import com.fasterxml.jackson.annotation.JsonInclude;
 
 import lombok.Builder;
@@ -22,5 +24,12 @@ public class GraphSseChunk {
 	private String text;
 
 	private String eventType;
+
+	/** 错误帧(单帧流 / 流内兜底共用):EventSource 读不到 HTTP 信封,流内 error 是唯一可达通道 */
+	public static ServerSentEvent<GraphSseChunk> errorFrame(String sessionId, String message) {
+		GraphSseChunk chunk = builder().eventType(GraphKeys.ERROR).text(message).build();
+		chunk.setSessionId(sessionId);
+		return ServerSentEvent.builder(chunk).event(GraphKeys.ERROR).build();
+	}
 
 }

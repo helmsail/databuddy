@@ -3,13 +3,14 @@ package com.helmsail.databuddy.mcp;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ExecutionException;
 import java.util.function.Supplier;
 
 import org.springframework.ai.tool.annotation.Tool;
+import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
-import com.alibaba.cloud.ai.graph.OverAllState;
 import com.fasterxml.jackson.annotation.JsonPropertyDescription;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -21,17 +22,17 @@ import com.helmsail.databuddy.agent.AgentService;
 import com.helmsail.databuddy.exception.BusinessException;
 import com.helmsail.databuddy.exception.ErrorCode;
 import com.helmsail.databuddy.graph.GraphKeys;
-import com.helmsail.databuddy.graph.GraphService;
+import com.helmsail.databuddy.graph.GraphSseChunk;
 
 import lombok.extern.slf4j.Slf4j;
 
 /**
  * MCP 工具服务(入口二):把图能力暴露给 MCP 客户端(Claude/Cursor 等)。
  * 三个工具:list_agents(选 agentId)/ nl2sql(回 SQL 文本)/ query_data(回数据预览);
- * 底层共用 GraphService.runLight(轻档跑图,无帧无流);业务错误按"工具结果文本"返回
+ * 底层共用 AgentService.run(唯一执行入口:nl2sqlMode 参数决定图内走法,本层阻塞收帧并解释);业务错误按"工具结果文本"返回
  * 而不是协议异常(主流约定:让调用方 LLM 能读到原因并转述)。
  * 线程模型(实证):MCP 工具为同步契约,SDK 传输层(WebFlux 0.17.0)不做调度器卸载,工具在请求线程上同步执行;
- * 图执行已调度到弹性线程(见 GraphService.runLight),但等待发生在调用线程——单机单用户可接受;
+ * 图执行已由图域调度到弹性线程,但等待发生在调用线程——单机单用户可接受;
  * 若未来并发调用,MCP 侧需换异步工具规格
  */
 @Slf4j
@@ -43,13 +44,10 @@ public class McpServerService {
 
 	private final AgentService agentService;
 
-	private final GraphService graphService;
-
 	private final ObjectMapper objectMapper;
 
-	public McpServerService(AgentService agentService, GraphService graphService, ObjectMapper objectMapper) {
+	public McpServerService(AgentService agentService, ObjectMapper objectMapper) {
 		this.agentService = agentService;
-		this.graphService = graphService;
 		this.objectMapper = objectMapper;
 	}
 
@@ -80,10 +78,10 @@ public class McpServerService {
 	public String nl2sql(Nl2SqlRequest request) {
 		return guard(() -> {
 			requireRequest(request);
-			OverAllState state = graphService.runLight(requireAgentId(request.agentId()),
+			List<GraphSseChunk> chunks = execute(requireAgentId(request.agentId()),
 					requireQuestion(request.naturalQuery()));
-			String sql = state.value(GraphKeys.SQL_QUERY, String.class).orElse("");
-			return StringUtils.hasText(sql) ? sql : notCompleted(state);
+			String sql = lastText(chunks, GraphKeys.SQL);
+			return StringUtils.hasText(sql) ? sql : notCompleted(chunks);
 		});
 	}
 
@@ -91,10 +89,10 @@ public class McpServerService {
 	public String queryData(QueryDataRequest request) {
 		return guard(() -> {
 			requireRequest(request);
-			OverAllState state = graphService.runLight(requireAgentId(request.agentId()),
+			List<GraphSseChunk> chunks = execute(requireAgentId(request.agentId()),
 					requireQuestion(request.naturalQuery()));
-			String resultJson = state.value(GraphKeys.SQL_RESULT, String.class).orElse("");
-			return StringUtils.hasText(resultJson) ? preview(resultJson) : notCompleted(state);
+			String resultJson = lastText(chunks, GraphKeys.RESULT);
+			return StringUtils.hasText(resultJson) ? preview(resultJson) : notCompleted(chunks);
 		});
 	}
 
@@ -136,9 +134,41 @@ public class McpServerService {
 		}
 	}
 
-	/** 未产出目标字段:优先返回图的终止语(澄清/超限),否则给通用说明 */
-	private String notCompleted(OverAllState state) {
-		String answer = state.value(GraphKeys.FINAL_ANSWER, String.class).orElse("");
+	/** 统一执行(轻档 = run 同一入口):MCP 为同步契约,阻塞收帧;error 帧(入口校验 / 执行失败)转业务异常,由 guard 转文本 */
+	private List<GraphSseChunk> execute(long agentId, String question) {
+		List<ServerSentEvent<GraphSseChunk>> frames;
+		try {
+			frames = agentService.run(agentId, question, null, false, true).collectList().toFuture().get();
+		}
+		catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new BusinessException(ErrorCode.SYSTEM_ERROR, "执行被中断", e);
+		}
+		catch (ExecutionException e) {
+			throw new BusinessException(ErrorCode.SYSTEM_ERROR, "执行等待失败: " + e.getMessage(), e);
+		}
+		List<GraphSseChunk> chunks = frames.stream().map(ServerSentEvent::data).toList();
+		String error = lastText(chunks, GraphKeys.ERROR);
+		if (StringUtils.hasText(error)) {
+			throw new BusinessException(ErrorCode.SYSTEM_ERROR, error);
+		}
+		return chunks;
+	}
+
+	/** 取某类帧的最后一个文本(error / sql / result / text;无则空串) */
+	private static String lastText(List<GraphSseChunk> chunks, String eventType) {
+		String text = "";
+		for (GraphSseChunk chunk : chunks) {
+			if (eventType.equals(chunk.getEventType())) {
+				text = chunk.getText();
+			}
+		}
+		return text;
+	}
+
+	/** 未产出目标字段:优先返回图的终止语(text 帧),否则给通用说明 */
+	private String notCompleted(List<GraphSseChunk> chunks) {
+		String answer = lastText(chunks, GraphKeys.TEXT);
 		return StringUtils.hasText(answer) ? "未能完成: " + answer
 				: "未能完成:未生成结果(请检查智能体是否绑定了数据表,以及模型配置是否可用)";
 	}
