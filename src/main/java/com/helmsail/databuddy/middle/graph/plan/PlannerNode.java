@@ -14,6 +14,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.helmsail.databuddy.bottom.aimodel.AiModelServiceFactory;
 import com.helmsail.databuddy.middle.graph.GraphKeys;
 import com.helmsail.databuddy.middle.graph.util.NodeUtils;
+import com.helmsail.databuddy.middle.memory.AgentMemoryTools;
 import com.helmsail.databuddy.middle.prompt.NodePromptTemplateMapper;
 
 import lombok.extern.slf4j.Slf4j;
@@ -22,7 +23,8 @@ import lombok.extern.slf4j.Slf4j;
  * 规划节点:数据链第六节点。把主查询转成"可执行的分步计划"(只含 SQL / Python 两类步骤,
  * 报告固定收尾不进计划)。生成本地循环:生成 → 当场解析 + 结构校验,不过则带问题与旧稿
  * 原地重生成(重试计数只是循环变量、不落键;超限写终止语),过厂才写 PLAN_JSON 与步号起点;
- * 重写场景(人工否决 / 执行组超限升级)读 PLAN_REPAIR_REASON 注入提示词。
+ * 重写场景(人工否决 / 执行组超限升级)读 PLAN_REPAIR_REASON 注入提示词;
+ * 挂记忆工具:重写原因(尤指人工否决意见)含用户给出的业务口径 / 规则 / 偏好修正时,模型按提示词自行沉淀。
  * 阻塞的 LLM 调用发生在图订阅线程(boundedElastic)上,不占事件循环
  */
 @Slf4j
@@ -38,11 +40,15 @@ public class PlannerNode implements AsyncNodeAction {
 
 	private final ObjectMapper objectMapper;
 
+	/** 记忆工具:重写原因含用户业务口径 / 规则修正时,模型按需沉淀(写入一律由模型自行选择) */
+	private final AgentMemoryTools agentMemoryTools;
+
 	public PlannerNode(NodePromptTemplateMapper promptMapper, AiModelServiceFactory aiModelServiceFactory,
-			ObjectMapper objectMapper) {
+			ObjectMapper objectMapper, AgentMemoryTools agentMemoryTools) {
 		this.promptMapper = promptMapper;
 		this.aiModelServiceFactory = aiModelServiceFactory;
 		this.objectMapper = objectMapper;
+		this.agentMemoryTools = agentMemoryTools;
 	}
 
 	@Override
@@ -55,6 +61,8 @@ public class PlannerNode implements AsyncNodeAction {
 		boolean light = Boolean.TRUE.equals(state.value(GraphKeys.Control.NL2SQL_ENABLED, false));
 		String reason = state.value(GraphKeys.Control.PLAN_REPAIR_REASON, String.class).orElse("");
 		String previousPlan = state.value(GraphKeys.Info.PLAN_JSON, String.class).orElse("");
+		String agentMemory = state.value(GraphKeys.Info.AGENT_MEMORY, String.class).orElse("(无)");
+		long agentId = NodeUtils.longOf(state, GraphKeys.Info.AGENT_ID);
 		// 重写上下文:首次"(无)";外部打回时给原因 + 上一版计划(模型据此避开旧问题)
 		String repairContext = "(无)";
 		if (StringUtils.hasText(reason)) {
@@ -65,8 +73,14 @@ public class PlannerNode implements AsyncNodeAction {
 		for (int attempt = 1; ; attempt++) {
 			String user = NodeUtils.renderPrompt(promptMapper, PlanConstants.PLANNER,
 					Map.of("main_query", mainQuery, "schema", schema, "knowledge", knowledge, "repair_context",
-							repairContext, "nl2sql_enabled", light ? "轻档" : "常规"));
-			String output = aiModelServiceFactory.getChatClient().prompt().user(user).call().content();
+							repairContext, "agent_memory", agentMemory, "nl2sql_enabled", light ? "轻档" : "常规"));
+			String output = aiModelServiceFactory.getChatClient()
+				.prompt()
+				.user(user)
+				.tools(agentMemoryTools)
+				.toolContext(Map.of(AgentMemoryTools.AGENT_ID_KEY, agentId))
+				.call()
+				.content();
 			String planJson = NodeUtils.stripFence(output);
 			log.info("计划生成完成(第 {} 次尝试): {}", attempt, NodeUtils.brief(planJson));
 			Plan plan = null;

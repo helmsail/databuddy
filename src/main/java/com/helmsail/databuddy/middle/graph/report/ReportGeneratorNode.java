@@ -18,7 +18,6 @@ import com.helmsail.databuddy.middle.graph.plan.Plan;
 import com.helmsail.databuddy.middle.graph.plan.PlanStep;
 import com.helmsail.databuddy.middle.graph.plan.PlanUtils;
 import com.helmsail.databuddy.middle.graph.util.NodeUtils;
-import com.helmsail.databuddy.middle.memory.AgentMemoryTools;
 import com.helmsail.databuddy.middle.prompt.NodePromptTemplateMapper;
 
 import lombok.extern.slf4j.Slf4j;
@@ -41,15 +40,11 @@ public class ReportGeneratorNode implements AsyncNodeAction {
 
 	private final ObjectMapper objectMapper;
 
-	/** 记忆工具:分析收尾时沉淀稳定口径 / 规则(不含本次数据结论) */
-	private final AgentMemoryTools agentMemoryTools;
-
 	public ReportGeneratorNode(NodePromptTemplateMapper promptMapper, AiModelServiceFactory aiModelServiceFactory,
-			ObjectMapper objectMapper, AgentMemoryTools agentMemoryTools) {
+			ObjectMapper objectMapper) {
 		this.promptMapper = promptMapper;
 		this.aiModelServiceFactory = aiModelServiceFactory;
 		this.objectMapper = objectMapper;
-		this.agentMemoryTools = agentMemoryTools;
 	}
 
 	@Override
@@ -60,15 +55,8 @@ public class ReportGeneratorNode implements AsyncNodeAction {
 		String agentMemory = state.value(GraphKeys.Info.AGENT_MEMORY, String.class).orElse("(无)");
 		String user = NodeUtils.renderPrompt(promptMapper, ReportConstants.REPORT_GENERATOR, Map.of("main_query", mainQuery,
 				"plan_summary", planSummary(state), "step_results", resultsText(state), "agent_memory", agentMemory));
-		long agentId = NodeUtils.longOf(state, GraphKeys.Info.AGENT_ID);
-		String report = aiModelServiceFactory.getChatClient()
-			.prompt()
-			.user(user)
-			.tools(agentMemoryTools)
-			.toolContext(Map.of(AgentMemoryTools.AGENT_ID_KEY, agentId))
-			.call()
-			.content();
-		if (!StringUtils.hasText(report)) { // 模型只调工具(如沉淀记忆)或空产出时 content() 为 null:占位语收尾,不因末段环节整轮失败
+		String report = aiModelServiceFactory.getChatClient().prompt().user(user).call().content();
+		if (!StringUtils.hasText(report)) { // 空产出时 content() 为 null:占位语收尾,不因末段环节整轮失败
 			log.warn("报告生成返回空文本,以占位语收尾");
 			report = "本轮未产出报告正文,可查看上方的执行过程与结果。";
 		}

@@ -315,8 +315,16 @@ SELECT 'planner',
 【重写上下文(上一版计划被否的原因与旧稿;首次为无)】
 {repair_context}
 
+【智能体记忆(此前沉淀的口径 / 规则 / 偏好,含 id)】
+{agent_memory}
+
 【规范查询】
 {main_query}
+
+记忆维护(按需,不要为了调用而调用):
+- 【重写上下文】含用户明确给出的业务口径 / 规则 / 偏好修正,且值得以后一直记住时,调用 save_memory 沉淀(每条只记一个事实,简洁陈述);
+- 记忆清单中有误或过时的条目,调用 update_memory / delete_memory(用清单中的 id);
+- 技术性打回(报错 / 取数失败)不沉淀。
 
 要求:仅输出 JSON,不要输出其他内容;格式为 {"planTitle": "计划标题(一句话概括:已核对哪些表和字段、准备怎么做)", "planSteps": [{"step": 1, "selectGroup": "sql-generate", "task": "详细任务描述"}]};selectGroup 必须为 sql-generate 或 python-generate。
 示例(规范查询为统计上个月各渠道的订单总额并找出占比最高的渠道):{"planTitle": "已核对 order 表含 channel、amount、create_time 字段", "planSteps": [{"step": 1, "selectGroup": "sql-generate", "task": "从 order 表查询 2026-08-01 至 2026-08-31 各 channel 的订单总额,按总额降序"}, {"step": 2, "selectGroup": "python-generate", "task": "读取上一步数据,计算各渠道占比并找出占比最高的渠道"}]}',
@@ -468,9 +476,7 @@ SELECT 'report-generator',
 1) 用 Markdown 组织:先给结论摘要(直接回答用户问题),再分节展开关键数据与发现,最后给出可行的建议;
 2) 只基于执行结果中的数据与结论撰写,严禁编造数字;数据被截断时注明可能不完整;
 3) 涉及对比、排名时给出具体数值;适当时用 Markdown 表格承载对比数据;
-4) 语言专业、简练,面向业务读者;报告结尾无需重复罗列执行过程。
-
-记忆维护(按需,不要为了调用而调用):本次分析中如确认了新的稳定业务口径 / 规则(不含本次数据结论),调用 save_memory 沉淀;与已有记忆冲突时调用 update_memory 修正(用清单中的 id)。',
+4) 语言专业、简练,面向业务读者;报告结尾无需重复罗列执行过程。',
 1, 1
 FROM DUAL
 WHERE NOT EXISTS (SELECT 1 FROM node_prompt_template WHERE name = 'report-generator');
