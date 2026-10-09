@@ -66,10 +66,10 @@ public class KnowledgeRecallNode implements AsyncNodeAction {
 	@Override
 	@Observed(name = "node.knowledgeRecall", contextualName = "知识召回")
 	public CompletableFuture<Map<String, Object>> apply(OverAllState state) {
-		String input = state.value(GraphKeys.INPUT, String.class).orElse("");
-		String sessionMemory = state.value(GraphKeys.SESSION_MEMORY, String.class).orElse("(无)");
-		String agentMemory = state.value(GraphKeys.AGENT_MEMORY, String.class).orElse("(无)");
-		long agentId = NodeUtils.longOf(state, GraphKeys.AGENT_ID);
+		String input = state.value(GraphKeys.Info.INPUT, String.class).orElse("");
+		String sessionMemory = state.value(GraphKeys.Info.SESSION_MEMORY, String.class).orElse("(无)");
+		String agentMemory = state.value(GraphKeys.Info.AGENT_MEMORY, String.class).orElse("(无)");
+		long agentId = NodeUtils.longOf(state, GraphKeys.Info.AGENT_ID);
 		String query = rewrite(input, sessionMemory);
 		// 逐域独立检索(术语 / 问答 / 文档各得独立 topK;表块归后续 Schema 召回)
 		List<RetrievedChunk> hits = new ArrayList<>();
@@ -77,7 +77,7 @@ public class KnowledgeRecallNode implements AsyncNodeAction {
 		hits.addAll(bizQaService.retrieve(agentId, query, TOP_K));
 		hits.addAll(bizDocumentService.retrieve(agentId, query, TOP_K));
 		log.info("知识召回: agent={}, 重写查询=\"{}\", 命中 {} 条", agentId, query, hits.size());
-		return CompletableFuture.completedFuture(Map.of(GraphKeys.KNOWLEDGE, collect(hits, agentMemory), GraphKeys.PROGRESS,
+		return CompletableFuture.completedFuture(Map.of(GraphKeys.Info.KNOWLEDGE, collect(hits, agentMemory), GraphKeys.Info.PROGRESS,
 				hits.isEmpty() ? "知识召回完成:未命中相关知识" : "知识召回完成:命中 " + hits.size() + " 条"));
 	}
 

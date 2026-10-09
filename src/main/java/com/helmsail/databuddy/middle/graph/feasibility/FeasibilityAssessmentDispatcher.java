@@ -17,7 +17,7 @@ public class FeasibilityAssessmentDispatcher implements EdgeAction {
 
 	@Override
 	public String apply(OverAllState state) {
-		String clarification = state.value(GraphKeys.FINAL_ANSWER, String.class).orElse("");
+		String clarification = state.value(GraphKeys.Info.FINAL_ANSWER, String.class).orElse("");
 		return StringUtils.hasText(clarification) ? END : PlanConstants.PLANNER;
 	}
 

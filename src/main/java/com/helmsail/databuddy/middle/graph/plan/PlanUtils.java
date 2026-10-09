@@ -69,8 +69,8 @@ public final class PlanUtils {
 
 	/** 从状态取当前步任务:解析失败抛出、任务为空给回退语(失败策略由调用方定,如 SQL 组升级重规划) */
 	public static String currentTask(ObjectMapper objectMapper, OverAllState state, String fallback) {
-		String planJson = state.value(GraphKeys.PLAN_JSON, String.class).orElse("");
-		int step = NodeUtils.intOf(state, GraphKeys.PLAN_STEP_NO, 1);
+		String planJson = state.value(GraphKeys.Info.PLAN_JSON, String.class).orElse("");
+		int step = NodeUtils.intOf(state, GraphKeys.Control.PLAN_STEP_NO, 1);
 		PlanStep current = stepAt(parse(objectMapper, planJson), step);
 		return StringUtils.hasText(current.getTask()) ? current.getTask() : fallback;
 	}

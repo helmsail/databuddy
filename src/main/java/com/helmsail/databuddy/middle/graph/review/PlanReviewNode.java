@@ -37,7 +37,7 @@ public class PlanReviewNode implements AsyncNodeAction {
 		if (decision.isEmpty()) {
 			// 异常路径(未收到决定):回自身等待——静态中断会在再次到达本节点前挂起,不会忙转
 			log.warn("计划确认节点未收到决定,回到等待");
-			return CompletableFuture.completedFuture(Map.of(GraphKeys.PLAN_NEXT_NODE, ReviewConstants.PLAN_REVIEW));
+			return CompletableFuture.completedFuture(Map.of(GraphKeys.Control.PLAN_NEXT_NODE, ReviewConstants.PLAN_REVIEW));
 		}
 		Object approvedValue = decision.get("approved");
 		boolean approved = approvedValue instanceof Boolean bool ? bool
@@ -45,25 +45,25 @@ public class PlanReviewNode implements AsyncNodeAction {
 		String feedback = String.valueOf(decision.getOrDefault("feedback", ""));
 		if (approved) {
 			log.info("计划已确认,放行执行");
-			return CompletableFuture.completedFuture(Map.of(GraphKeys.HUMAN_REVIEW_ENABLED, false, GraphKeys.PLAN_NEXT_NODE,
-					PlanConstants.PLAN_EXECUTOR, GraphKeys.PROGRESS, "计划已确认:开始执行"));
+			return CompletableFuture.completedFuture(Map.of(GraphKeys.Control.HUMAN_REVIEW_ENABLED, false, GraphKeys.Control.PLAN_NEXT_NODE,
+					PlanConstants.PLAN_EXECUTOR, GraphKeys.Info.PROGRESS, "计划已确认:开始执行"));
 		}
-		int count = NodeUtils.intOf(state, GraphKeys.PLAN_RETRY_COUNT, 0) + 1;
+		int count = NodeUtils.intOf(state, GraphKeys.Control.PLAN_RETRY_COUNT, 0) + 1;
 		if (count > PlanConstants.PLAN_RETRY_MAX) {
 			log.warn("计划否决超限({} 次),终止", PlanConstants.PLAN_RETRY_MAX);
-			return CompletableFuture.completedFuture(Map.of(GraphKeys.FINAL_ANSWER, TERMINATION, GraphKeys.PROGRESS,
+			return CompletableFuture.completedFuture(Map.of(GraphKeys.Info.FINAL_ANSWER, TERMINATION, GraphKeys.Info.PROGRESS,
 					"计划被否决且超限:终止"));
 		}
 		log.info("计划被否决(第 {} 次),重新规划: {}", count, feedback);
-		return CompletableFuture.completedFuture(Map.of(GraphKeys.PLAN_RETRY_COUNT, count, GraphKeys.PLAN_REPAIR_REASON,
-				StringUtils.hasText(feedback) ? feedback : "用户否决了计划", GraphKeys.PLAN_STEP_NO, 1,
-				GraphKeys.HUMAN_REVIEW_ENABLED, true, GraphKeys.PLAN_NEXT_NODE, PlanConstants.PLANNER, GraphKeys.PROGRESS,
+		return CompletableFuture.completedFuture(Map.of(GraphKeys.Control.PLAN_RETRY_COUNT, count, GraphKeys.Control.PLAN_REPAIR_REASON,
+				StringUtils.hasText(feedback) ? feedback : "用户否决了计划", GraphKeys.Control.PLAN_STEP_NO, 1,
+				GraphKeys.Control.HUMAN_REVIEW_ENABLED, true, GraphKeys.Control.PLAN_NEXT_NODE, PlanConstants.PLANNER, GraphKeys.Info.PROGRESS,
 				"计划已被否决:重新规划"));
 	}
 
 	/** 读确认决定(恢复时 updateState 写入;缺省空表) */
 	private Map<String, Object> decision(OverAllState state) {
-		Object raw = state.value(GraphKeys.PLAN_REVIEW_DECISION).orElse(null);
+		Object raw = state.value(GraphKeys.Control.PLAN_REVIEW_DECISION).orElse(null);
 		if (raw instanceof Map<?, ?> map && !map.isEmpty()) {
 			Map<String, Object> decision = new HashMap<>();
 			map.forEach((key, value) -> decision.put(String.valueOf(key), value));

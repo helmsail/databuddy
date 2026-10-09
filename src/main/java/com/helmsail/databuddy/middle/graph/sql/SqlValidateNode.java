@@ -50,22 +50,22 @@ public class SqlValidateNode implements AsyncNodeAction {
 	@Override
 	@Observed(name = "node.sqlValidate", contextualName = "SQL 校验")
 	public CompletableFuture<Map<String, Object>> apply(OverAllState state) {
-		String sqlQuery = state.value(GraphKeys.SQL_QUERY, String.class).orElse("");
+		String sqlQuery = state.value(GraphKeys.Info.SQL_QUERY, String.class).orElse("");
 		if (!StringUtils.hasText(sqlQuery)) {
 			log.warn("SQL 校验收到空 SQL,打回生成");
-			return CompletableFuture.completedFuture(Map.of(GraphKeys.SQL_PASSED, false, GraphKeys.SQL_REPAIR_REASON,
-					"SQL 为空", GraphKeys.PROGRESS, "SQL 校验未通过:SQL 为空"));
+			return CompletableFuture.completedFuture(Map.of(GraphKeys.Control.SQL_PASSED, false, GraphKeys.Control.SQL_REPAIR_REASON,
+					"SQL 为空", GraphKeys.Info.PROGRESS, "SQL 校验未通过:SQL 为空"));
 		}
-		String mainQuery = state.value(GraphKeys.MAIN_QUERY, String.class)
-			.orElse(state.value(GraphKeys.INPUT, String.class).orElse(""));
-		long agentId = NodeUtils.longOf(state, GraphKeys.AGENT_ID);
+		String mainQuery = state.value(GraphKeys.Info.MAIN_QUERY, String.class)
+			.orElse(state.value(GraphKeys.Info.INPUT, String.class).orElse(""));
+		long agentId = NodeUtils.longOf(state, GraphKeys.Info.AGENT_ID);
 		AgentBizTableService.DatabaseTarget target = tableService.databaseTargetOf(agentId,
-				NodeUtils.stringList(state, GraphKeys.RECALLED_TABLES));
+				NodeUtils.stringList(state, GraphKeys.Info.RECALLED_TABLES));
 		String dialect = target == null ? "MySQL" : target.dialect();
 		String user = NodeUtils.renderPrompt(promptMapper, SqlConstants.SQL_VALIDATE,
 				Map.of("dialect", dialect, "task", PlanUtils.currentTaskOrFallback(objectMapper, state, "无"),
-						"sql_query", sqlQuery, "schema", state.value(GraphKeys.SCHEMA, String.class).orElse("无"),
-						"knowledge", state.value(GraphKeys.KNOWLEDGE, String.class).orElse("无"), "main_query",
+						"sql_query", sqlQuery, "schema", state.value(GraphKeys.Info.SCHEMA, String.class).orElse("无"),
+						"knowledge", state.value(GraphKeys.Info.KNOWLEDGE, String.class).orElse("无"), "main_query",
 						mainQuery));
 		return CompletableFuture.completedFuture(assess(user));
 	}
@@ -79,14 +79,14 @@ public class SqlValidateNode implements AsyncNodeAction {
 			String reason = root.path("reason").asText("");
 			log.info("SQL 校验: passed={}, reason={}", passed, reason);
 			if (passed) {
-				return Map.of(GraphKeys.SQL_PASSED, true, GraphKeys.PROGRESS, "SQL 校验通过");
+				return Map.of(GraphKeys.Control.SQL_PASSED, true, GraphKeys.Info.PROGRESS, "SQL 校验通过");
 			}
-			return Map.of(GraphKeys.SQL_PASSED, false, GraphKeys.SQL_REPAIR_REASON, "SQL 校验未通过: " + reason,
-					GraphKeys.PROGRESS, "SQL 校验未通过:重新生成 SQL");
+			return Map.of(GraphKeys.Control.SQL_PASSED, false, GraphKeys.Control.SQL_REPAIR_REASON, "SQL 校验未通过: " + reason,
+					GraphKeys.Info.PROGRESS, "SQL 校验未通过:重新生成 SQL");
 		}
 		catch (RuntimeException e) {
 			log.warn("SQL 校验调用或解析失败,按通过放行: {}", e.getMessage());
-			return Map.of(GraphKeys.SQL_PASSED, true, GraphKeys.PROGRESS, "SQL 校验回退:未能判定,按通过继续");
+			return Map.of(GraphKeys.Control.SQL_PASSED, true, GraphKeys.Info.PROGRESS, "SQL 校验回退:未能判定,按通过继续");
 		}
 	}
 

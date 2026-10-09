@@ -41,31 +41,31 @@ public class SchemaRecallNode implements AsyncNodeAction {
 	public SchemaRecallNode(AgentBizTableService tableService) {
 		this.tableService = tableService;
 	}
-    
+
 	@Override
 	@Observed(name = "node.schemaRecall", contextualName = "Schema 召回")
 	public CompletableFuture<Map<String, Object>> apply(OverAllState state) {
-		String mainQuery = state.value(GraphKeys.MAIN_QUERY, String.class)
-			.orElse(state.value(GraphKeys.INPUT, String.class).orElse(""));
+		String mainQuery = state.value(GraphKeys.Info.MAIN_QUERY, String.class)
+			.orElse(state.value(GraphKeys.Info.INPUT, String.class).orElse(""));
 		List<String> queryList = queries(state, mainQuery);
-		long agentId = NodeUtils.longOf(state, GraphKeys.AGENT_ID);
+		long agentId = NodeUtils.longOf(state, GraphKeys.Info.AGENT_ID);
 		List<RetrievedChunk> tables = recall(agentId, queryList);
 		if (tables.isEmpty()) {
 			log.warn("Schema 召回未命中: agent={}, 查询=\"{}\"", agentId, mainQuery);
-			return CompletableFuture.completedFuture(Map.of(GraphKeys.SCHEMA, "无", GraphKeys.RECALLED_TABLES, List.of(),
-					GraphKeys.PROGRESS, "Schema 召回未命中:未检索到相关数据表", GraphKeys.FINAL_ANSWER, NO_TABLE_MESSAGE));
+			return CompletableFuture.completedFuture(Map.of(GraphKeys.Info.SCHEMA, "无", GraphKeys.Info.RECALLED_TABLES, List.of(),
+					GraphKeys.Info.PROGRESS, "Schema 召回未命中:未检索到相关数据表", GraphKeys.Info.FINAL_ANSWER, NO_TABLE_MESSAGE));
 		}
 		List<String> names = names(tables);
 		log.info("Schema 召回: agent={}, {} 路查询命中 {} 张表: {}", agentId, queryList.size(), tables.size(), names);
-		return CompletableFuture.completedFuture(Map.of(GraphKeys.SCHEMA, join(tables), GraphKeys.RECALLED_TABLES, names,
-				GraphKeys.PROGRESS, note(tables.size(), names)));
+		return CompletableFuture.completedFuture(Map.of(GraphKeys.Info.SCHEMA, join(tables), GraphKeys.Info.RECALLED_TABLES, names,
+				GraphKeys.Info.PROGRESS, note(tables.size(), names)));
 	}
 
 	/** 检索查询组:主查询 + 备用查询(去重,主查询优先;无备用时单路) */
 	private List<String> queries(OverAllState state, String mainQuery) {
 		List<String> queries = new ArrayList<>();
 		queries.add(mainQuery);
-		for (String expanded : NodeUtils.stringList(state, GraphKeys.BACKUP_QUERIES)) {
+		for (String expanded : NodeUtils.stringList(state, GraphKeys.Info.BACKUP_QUERIES)) {
 			if (!queries.contains(expanded)) {
 				queries.add(expanded);
 			}

@@ -55,12 +55,12 @@ public class ReportGeneratorNode implements AsyncNodeAction {
 	@Override
 	@Observed(name = "node.reportGenerator", contextualName = "报告生成")
 	public CompletableFuture<Map<String, Object>> apply(OverAllState state) {
-		String mainQuery = state.value(GraphKeys.MAIN_QUERY, String.class)
-			.orElse(state.value(GraphKeys.INPUT, String.class).orElse(""));
-		String agentMemory = state.value(GraphKeys.AGENT_MEMORY, String.class).orElse("(无)");
+		String mainQuery = state.value(GraphKeys.Info.MAIN_QUERY, String.class)
+			.orElse(state.value(GraphKeys.Info.INPUT, String.class).orElse(""));
+		String agentMemory = state.value(GraphKeys.Info.AGENT_MEMORY, String.class).orElse("(无)");
 		String user = NodeUtils.renderPrompt(promptMapper, ReportConstants.REPORT_GENERATOR, Map.of("main_query", mainQuery,
 				"plan_summary", planSummary(state), "step_results", resultsText(state), "agent_memory", agentMemory));
-		long agentId = NodeUtils.longOf(state, GraphKeys.AGENT_ID);
+		long agentId = NodeUtils.longOf(state, GraphKeys.Info.AGENT_ID);
 		String report = aiModelServiceFactory.getChatClient()
 			.prompt()
 			.user(user)
@@ -73,13 +73,13 @@ public class ReportGeneratorNode implements AsyncNodeAction {
 			report = "本轮未产出报告正文,可查看上方的执行过程与结果。";
 		}
 		log.info("报告生成完成: {} 字符", report.length());
-		return CompletableFuture.completedFuture(Map.of(GraphKeys.FINAL_ANSWER, report, GraphKeys.PROGRESS,
+		return CompletableFuture.completedFuture(Map.of(GraphKeys.Info.FINAL_ANSWER, report, GraphKeys.Info.PROGRESS,
 				"报告生成完成"));
 	}
 
 	/** 计划摘要:标题 + 各步任务(解析失败给原始 JSON 摘要) */
 	private String planSummary(OverAllState state) {
-		String planJson = state.value(GraphKeys.PLAN_JSON, String.class).orElse("");
+		String planJson = state.value(GraphKeys.Info.PLAN_JSON, String.class).orElse("");
 		try {
 			Plan plan = PlanUtils.parse(objectMapper, planJson);
 			StringBuilder summary = new StringBuilder();
@@ -101,7 +101,7 @@ public class ReportGeneratorNode implements AsyncNodeAction {
 
 	/** 分步结果文本:按 step_N / step_N_analysis 键序拼接(每个值截断) */
 	private String resultsText(OverAllState state) {
-		Object raw = state.value(GraphKeys.STEP_RESULTS).orElse(null);
+		Object raw = state.value(GraphKeys.Info.STEP_RESULTS).orElse(null);
 		if (!(raw instanceof Map<?, ?> map) || map.isEmpty()) {
 			return "(暂无执行结果)";
 		}

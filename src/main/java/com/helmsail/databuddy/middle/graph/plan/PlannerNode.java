@@ -48,13 +48,13 @@ public class PlannerNode implements AsyncNodeAction {
 	@Override
 	@Observed(name = "node.planner", contextualName = "规划")
 	public CompletableFuture<Map<String, Object>> apply(OverAllState state) {
-		String mainQuery = state.value(GraphKeys.MAIN_QUERY, String.class)
-			.orElse(state.value(GraphKeys.INPUT, String.class).orElse(""));
-		String schema = state.value(GraphKeys.SCHEMA, String.class).orElse("无");
-		String knowledge = state.value(GraphKeys.KNOWLEDGE, String.class).orElse("无");
-		boolean light = Boolean.TRUE.equals(state.value(GraphKeys.NL2SQL_ENABLED, false));
-		String reason = state.value(GraphKeys.PLAN_REPAIR_REASON, String.class).orElse("");
-		String previousPlan = state.value(GraphKeys.PLAN_JSON, String.class).orElse("");
+		String mainQuery = state.value(GraphKeys.Info.MAIN_QUERY, String.class)
+			.orElse(state.value(GraphKeys.Info.INPUT, String.class).orElse(""));
+		String schema = state.value(GraphKeys.Info.SCHEMA, String.class).orElse("无");
+		String knowledge = state.value(GraphKeys.Info.KNOWLEDGE, String.class).orElse("无");
+		boolean light = Boolean.TRUE.equals(state.value(GraphKeys.Control.NL2SQL_ENABLED, false));
+		String reason = state.value(GraphKeys.Control.PLAN_REPAIR_REASON, String.class).orElse("");
+		String previousPlan = state.value(GraphKeys.Info.PLAN_JSON, String.class).orElse("");
 		// 重写上下文:首次"(无)";外部打回时给原因 + 上一版计划(模型据此避开旧问题)
 		String repairContext = "(无)";
 		if (StringUtils.hasText(reason)) {
@@ -80,12 +80,12 @@ public class PlannerNode implements AsyncNodeAction {
 			}
 			if (invalid == null) {
 				// 过厂:步号重置为 1(重写场景旧步号作废),写计划
-				return CompletableFuture.completedFuture(Map.of(GraphKeys.PLAN_JSON, planJson, GraphKeys.PLAN_STEP_NO, 1,
-						GraphKeys.PROGRESS, "规划完成:共 " + plan.getPlanSteps().size() + " 步"));
+				return CompletableFuture.completedFuture(Map.of(GraphKeys.Info.PLAN_JSON, planJson, GraphKeys.Control.PLAN_STEP_NO, 1,
+						GraphKeys.Info.PROGRESS, "规划完成:共 " + plan.getPlanSteps().size() + " 步"));
 			}
 			if (attempt > PlanConstants.STRUCTURE_RETRY_MAX) {
 				log.error("计划重写超限({} 次),终止: {}", PlanConstants.STRUCTURE_RETRY_MAX, invalid);
-				return CompletableFuture.completedFuture(Map.of(GraphKeys.FINAL_ANSWER, TERMINATION, GraphKeys.PROGRESS,
+				return CompletableFuture.completedFuture(Map.of(GraphKeys.Info.FINAL_ANSWER, TERMINATION, GraphKeys.Info.PROGRESS,
 						"计划校验失败且重写超限:终止"));
 			}
 			log.warn("计划校验未通过(第 {} 次重写): {}", attempt, invalid);

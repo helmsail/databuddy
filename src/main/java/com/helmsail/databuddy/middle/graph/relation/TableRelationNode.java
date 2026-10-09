@@ -42,10 +42,10 @@ public class TableRelationNode implements AsyncNodeAction {
 	@Observed(name = "node.tableRelation", contextualName = "表关系补齐")
 	public CompletableFuture<Map<String, Object>> apply(OverAllState state) {
 		List<String> seeds = seedTables(state);
-		long agentId = NodeUtils.longOf(state, GraphKeys.AGENT_ID);
+		long agentId = NodeUtils.longOf(state, GraphKeys.Info.AGENT_ID);
 		if (seeds.isEmpty()) {
 			log.warn("表关系节点收到空表集,跳过: agent={}", agentId);
-			return CompletableFuture.completedFuture(Map.of(GraphKeys.PROGRESS, "表关系补齐跳过:无召回表"));
+			return CompletableFuture.completedFuture(Map.of(GraphKeys.Info.PROGRESS, "表关系补齐跳过:无召回表"));
 		}
 		List<BizTableRelation> relations = tableService.relationsOf(agentId, seeds);
 		Set<String> finalTables = new LinkedHashSet<>(seeds);
@@ -69,14 +69,14 @@ public class TableRelationNode implements AsyncNodeAction {
 			.toList();
 		log.info("表关系补齐: agent={}, 关系 {} 条, 补拉 {} 张: {}", agentId, relationLines.size(), pulledNames.size(),
 				pulledNames);
-		return CompletableFuture.completedFuture(Map.of(GraphKeys.SCHEMA, merge(state, pulledContents),
-				GraphKeys.RECALLED_TABLES, List.copyOf(finalTables), GraphKeys.TABLE_RELATIONS, relationsText(relationLines),
-				GraphKeys.PROGRESS, note(relationLines.size(), pulledNames)));
+		return CompletableFuture.completedFuture(Map.of(GraphKeys.Info.SCHEMA, merge(state, pulledContents),
+				GraphKeys.Info.RECALLED_TABLES, List.copyOf(finalTables), GraphKeys.Info.TABLE_RELATIONS, relationsText(relationLines),
+				GraphKeys.Info.PROGRESS, note(relationLines.size(), pulledNames)));
 	}
 
 	/** 读召回表集(前节点写入;防御性取值) */
 	private List<String> seedTables(OverAllState state) {
-		Object raw = state.value(GraphKeys.RECALLED_TABLES).orElse(null);
+		Object raw = state.value(GraphKeys.Info.RECALLED_TABLES).orElse(null);
 		if (raw instanceof List<?> list) {
 			return list.stream().map(String::valueOf).toList();
 		}
@@ -131,7 +131,7 @@ public class TableRelationNode implements AsyncNodeAction {
 
 	/** SCHEMA 追加补拉块(各块 trim 后换行分隔) */
 	private String merge(OverAllState state, List<String> pulledContents) {
-		StringBuilder merged = new StringBuilder(state.value(GraphKeys.SCHEMA, String.class).orElse(""));
+		StringBuilder merged = new StringBuilder(state.value(GraphKeys.Info.SCHEMA, String.class).orElse(""));
 		for (String content : pulledContents) {
 			merged.append('\n').append(content.trim()).append('\n');
 		}

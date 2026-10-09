@@ -15,7 +15,7 @@ public class PlannerDispatcher implements EdgeAction {
 
 	@Override
 	public String apply(OverAllState state) {
-		String termination = state.value(GraphKeys.FINAL_ANSWER, String.class).orElse("");
+		String termination = state.value(GraphKeys.Info.FINAL_ANSWER, String.class).orElse("");
 		return StringUtils.hasText(termination) ? END : PlanConstants.PLAN_EXECUTOR;
 	}
 

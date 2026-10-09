@@ -136,10 +136,10 @@ public class GraphService {
 			return;
 		}
 		release(thread.getThreadId()); // 开跑前释放旧检查点(框架语义要求:防上轮未确认的挂起状态与新轮混写)
-		Map<String, Object> init = Map.of(GraphKeys.INPUT, thread.getInput(), GraphKeys.AGENT_ID, thread.getAgentId(),
-				GraphKeys.SESSION_MEMORY, memory.sessionMemory(thread.getThreadId()),
-				GraphKeys.AGENT_MEMORY, memory.agentMemory(thread.getAgentId()),
-				GraphKeys.HUMAN_REVIEW_ENABLED, planReview, GraphKeys.NL2SQL_ENABLED, thread.isNl2sqlMode());
+		Map<String, Object> init = Map.of(GraphKeys.Info.INPUT, thread.getInput(), GraphKeys.Info.AGENT_ID, thread.getAgentId(),
+				GraphKeys.Info.SESSION_MEMORY, memory.sessionMemory(thread.getThreadId()),
+				GraphKeys.Info.AGENT_MEMORY, memory.agentMemory(thread.getAgentId()),
+				GraphKeys.Control.HUMAN_REVIEW_ENABLED, planReview, GraphKeys.Control.NL2SQL_ENABLED, thread.isNl2sqlMode());
 		Flux<NodeOutput> outputs = graph.stream(init, RunnableConfig.builder().threadId(thread.getThreadId()).build());
 		subscribe(thread, outputs);
 	}
@@ -178,7 +178,7 @@ public class GraphService {
 			fail(sink, sessionId, "计划不存在或已失效");
 			return;
 		}
-		long agentId = NodeUtils.longOf(snapshot.state(), GraphKeys.AGENT_ID); // 兼容读取:检查点往返后数字键形态多变
+		long agentId = NodeUtils.longOf(snapshot.state(), GraphKeys.Info.AGENT_ID); // 兼容读取:检查点往返后数字键形态多变
 		if (agentId <= 0) {
 			fail(sink, sessionId, "计划不存在或已失效");
 			return;
@@ -194,7 +194,7 @@ public class GraphService {
 		RunnableConfig config;
 		try {
 			config = graph.updateState(RunnableConfig.builder().threadId(thread.getThreadId()).build(),
-					Map.of(GraphKeys.PLAN_REVIEW_DECISION,
+					Map.of(GraphKeys.Control.PLAN_REVIEW_DECISION,
 							Map.of("approved", approved, "feedback", feedback == null ? "" : feedback)));
 		}
 		catch (Exception e) {
@@ -210,13 +210,13 @@ public class GraphService {
 			return; // START 帧无内容,不对外
 		}
 		if (output.isEND()) {
-			thread.collectAnswer(output.state().value(GraphKeys.FINAL_ANSWER, String.class).orElse(null)); // 记录最终回复
+			thread.collectAnswer(output.state().value(GraphKeys.Info.FINAL_ANSWER, String.class).orElse(null)); // 记录最终回复
 			return;
 		}
 		// 中间节点完成:过程状态 / SQL / 结果三帧(空判与去重都在现场内)
-		thread.step(output.node(), output.state().value(GraphKeys.PROGRESS, String.class).orElse(null));
-		thread.sql(output.node(), output.state().value(GraphKeys.SQL_QUERY, String.class).orElse(null));
-		thread.result(output.node(), output.state().value(GraphKeys.SQL_RESULT, String.class).orElse(null));
+		thread.step(output.node(), output.state().value(GraphKeys.Info.PROGRESS, String.class).orElse(null));
+		thread.sql(output.node(), output.state().value(GraphKeys.Info.SQL_QUERY, String.class).orElse(null));
+		thread.result(output.node(), output.state().value(GraphKeys.Info.SQL_RESULT, String.class).orElse(null));
 	}
 
 	private void onComplete(GraphThread thread) {
@@ -259,7 +259,7 @@ public class GraphService {
 		if (!hasPendingNode) {
 			return false;
 		}
-		String planJson = snapshot.state().value(GraphKeys.PLAN_JSON, String.class).orElse("");
+		String planJson = snapshot.state().value(GraphKeys.Info.PLAN_JSON, String.class).orElse("");
 		log.info("执行挂起(计划待确认): threadId={}, next={}", thread.getThreadId(), snapshot.next());
 		thread.suspend(planJson); // 挂起收尾:plan 帧 + done 帧 + 收束(检查点不动 = 保留待恢复)
 		// 记忆:用户看到了什么就记什么(计划摘要入上文,确认后下一轮不困惑);轻档不回写(防御:轻档流不派向中断点)

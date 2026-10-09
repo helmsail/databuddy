@@ -18,11 +18,11 @@ public class PythonExecuteDispatcher implements EdgeAction {
 
 	@Override
 	public String apply(OverAllState state) {
-		String termination = state.value(GraphKeys.FINAL_ANSWER, String.class).orElse("");
+		String termination = state.value(GraphKeys.Info.FINAL_ANSWER, String.class).orElse("");
 		if (StringUtils.hasText(termination)) {
 			return END;
 		}
-		String next = state.value(GraphKeys.PYTHON_NEXT, "analyze");
+		String next = state.value(GraphKeys.Control.PYTHON_NEXT, "analyze");
 		return switch (next) {
 			case "end" -> END;
 			case "replan" -> PlanConstants.PLANNER;

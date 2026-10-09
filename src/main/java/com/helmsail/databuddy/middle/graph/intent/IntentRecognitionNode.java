@@ -47,12 +47,12 @@ public class IntentRecognitionNode implements AsyncNodeAction {
 	@Override
 	@Observed(name = "node.intentRecognition", contextualName = "意图识别")
 	public CompletableFuture<Map<String, Object>> apply(OverAllState state) {
-		String input = state.value(GraphKeys.INPUT, String.class).orElse("");
-		String sessionMemory = state.value(GraphKeys.SESSION_MEMORY, String.class).orElse("(无)");
-		String agentMemory = state.value(GraphKeys.AGENT_MEMORY, String.class).orElse("(无)");
+		String input = state.value(GraphKeys.Info.INPUT, String.class).orElse("");
+		String sessionMemory = state.value(GraphKeys.Info.SESSION_MEMORY, String.class).orElse("(无)");
+		String agentMemory = state.value(GraphKeys.Info.AGENT_MEMORY, String.class).orElse("(无)");
 		String user = NodeUtils.renderPrompt(promptMapper, IntentConstants.INTENT_RECOGNITION,
 				Map.of("input", input, "session_memory", sessionMemory, "agent_memory", agentMemory));
-		long agentId = NodeUtils.longOf(state, GraphKeys.AGENT_ID);
+		long agentId = NodeUtils.longOf(state, GraphKeys.Info.AGENT_ID);
 		String output = aiModelServiceFactory.getChatClient()
 			.prompt()
 			.user(user)
@@ -75,10 +75,10 @@ public class IntentRecognitionNode implements AsyncNodeAction {
 			if (!StringUtils.hasText(response)) {
 				throw new IllegalStateException("意图识别为 chat 但未产出回复: " + NodeUtils.brief(output));
 			}
-			return Map.of(GraphKeys.CLASSIFICATION, classification, GraphKeys.FINAL_ANSWER, response,
-					GraphKeys.PROGRESS, "意图识别完成:闲聊");
+			return Map.of(GraphKeys.Control.CLASSIFICATION, classification, GraphKeys.Info.FINAL_ANSWER, response,
+					GraphKeys.Info.PROGRESS, "意图识别完成:闲聊");
 		}
-		return Map.of(GraphKeys.CLASSIFICATION, classification, GraphKeys.PROGRESS, "意图识别完成:数据分析");
+		return Map.of(GraphKeys.Control.CLASSIFICATION, classification, GraphKeys.Info.PROGRESS, "意图识别完成:数据分析");
 	}
 
 }

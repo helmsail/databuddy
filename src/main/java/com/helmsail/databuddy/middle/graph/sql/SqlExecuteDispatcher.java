@@ -17,11 +17,11 @@ public class SqlExecuteDispatcher implements EdgeAction {
 
 	@Override
 	public String apply(OverAllState state) {
-		String termination = state.value(GraphKeys.FINAL_ANSWER, String.class).orElse("");
+		String termination = state.value(GraphKeys.Info.FINAL_ANSWER, String.class).orElse("");
 		if (StringUtils.hasText(termination)) {
 			return END;
 		}
-		String next = state.value(GraphKeys.SQL_NEXT, "hub");
+		String next = state.value(GraphKeys.Control.SQL_NEXT, "hub");
 		return switch (next) {
 			case "end" -> END;
 			case "hub" -> PlanConstants.PLAN_EXECUTOR;

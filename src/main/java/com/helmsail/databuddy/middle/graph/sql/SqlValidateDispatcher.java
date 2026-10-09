@@ -11,7 +11,7 @@ public class SqlValidateDispatcher implements EdgeAction {
 
 	@Override
 	public String apply(OverAllState state) {
-		boolean passed = state.value(GraphKeys.SQL_PASSED, false);
+		boolean passed = state.value(GraphKeys.Control.SQL_PASSED, false);
 		return passed ? SqlConstants.SQL_EXECUTE : SqlConstants.SQL_GENERATE;
 	}
 

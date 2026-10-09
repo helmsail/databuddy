@@ -13,7 +13,7 @@ public class PlanExecutorDispatcher implements EdgeAction {
 
 	@Override
 	public String apply(OverAllState state) {
-		return state.value(GraphKeys.PLAN_NEXT_NODE, END);
+		return state.value(GraphKeys.Control.PLAN_NEXT_NODE, END);
 	}
 
 }

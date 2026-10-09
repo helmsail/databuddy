@@ -46,12 +46,12 @@ public class FeasibilityAssessmentNode implements AsyncNodeAction {
 	@Override
 	@Observed(name = "node.feasibilityAssessment", contextualName = "可行性评估")
 	public CompletableFuture<Map<String, Object>> apply(OverAllState state) {
-		String mainQuery = state.value(GraphKeys.MAIN_QUERY, String.class)
-			.orElse(state.value(GraphKeys.INPUT, String.class).orElse(""));
-		String schema = state.value(GraphKeys.SCHEMA, String.class).orElse("无");
-		String tableRelations = state.value(GraphKeys.TABLE_RELATIONS, String.class).orElse("无");
-		String knowledge = state.value(GraphKeys.KNOWLEDGE, String.class).orElse("无");
-		String sessionMemory = state.value(GraphKeys.SESSION_MEMORY, String.class).orElse("(无)");
+		String mainQuery = state.value(GraphKeys.Info.MAIN_QUERY, String.class)
+			.orElse(state.value(GraphKeys.Info.INPUT, String.class).orElse(""));
+		String schema = state.value(GraphKeys.Info.SCHEMA, String.class).orElse("无");
+		String tableRelations = state.value(GraphKeys.Info.TABLE_RELATIONS, String.class).orElse("无");
+		String knowledge = state.value(GraphKeys.Info.KNOWLEDGE, String.class).orElse("无");
+		String sessionMemory = state.value(GraphKeys.Info.SESSION_MEMORY, String.class).orElse("(无)");
 		String user = NodeUtils.renderPrompt(promptMapper, FeasibilityConstants.FEASIBILITY_ASSESSMENT,
 				Map.of("main_query", mainQuery, "schema", schema, "table_relations", tableRelations, "knowledge",
 						knowledge, "session_memory", sessionMemory));
@@ -67,18 +67,18 @@ public class FeasibilityAssessmentNode implements AsyncNodeAction {
 			String clarification = root.path("clarification").asText("");
 			if (FeasibilityConstants.NEED_CLARIFICATION.equals(type) && StringUtils.hasText(clarification)) {
 				log.info("可行性评估: 需要澄清,反问=\"{}\"", clarification);
-				return Map.of(GraphKeys.FINAL_ANSWER, clarification, GraphKeys.PROGRESS, "可行性评估完成:需要澄清");
+				return Map.of(GraphKeys.Info.FINAL_ANSWER, clarification, GraphKeys.Info.PROGRESS, "可行性评估完成:需要澄清");
 			}
 			if (FeasibilityConstants.DATA_ANALYSIS.equals(type)) {
 				log.info("可行性评估: 可分析,放行");
-				return Map.of(GraphKeys.PROGRESS, "可行性评估完成:可行");
+				return Map.of(GraphKeys.Info.PROGRESS, "可行性评估完成:可行");
 			}
 			log.warn("可行性评估输出不符合契约,按可行放行: {}", NodeUtils.brief(output));
 		}
 		catch (RuntimeException e) {
 			log.warn("可行性评估调用或解析失败,按可行放行: {}", e.getMessage());
 		}
-		return Map.of(GraphKeys.PROGRESS, "可行性评估回退:未能判定,按可行继续");
+		return Map.of(GraphKeys.Info.PROGRESS, "可行性评估回退:未能判定,按可行继续");
 	}
 
 }

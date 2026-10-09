@@ -53,9 +53,11 @@ public class SqlGenerateNode implements AsyncNodeAction {
 	@Override
 	@Observed(name = "node.sqlGenerate", contextualName = "SQL 生成")
 	public CompletableFuture<Map<String, Object>> apply(OverAllState state) {
-		int attempt = NodeUtils.intOf(state, GraphKeys.SQL_RETRY_COUNT, 0) + 1;
+		int attempt = NodeUtils.intOf(state, GraphKeys.Control.SQL_RETRY_COUNT, 0) + 1;
 		if (attempt > SqlConstants.SQL_RETRY_MAX) {
-			return CompletableFuture.completedFuture(replan(state, "SQL 组重试超限: " + lastReason(state)));
+			String lastReason = state.value(GraphKeys.Control.SQL_REPAIR_REASON, String.class).orElse("");
+			return CompletableFuture.completedFuture(replan(state,
+					"SQL 组重试超限: " + (StringUtils.hasText(lastReason) ? lastReason : "多次尝试未成功")));
 		}
 		String task;
 		try {
@@ -64,65 +66,52 @@ public class SqlGenerateNode implements AsyncNodeAction {
 		catch (RuntimeException e) {
 			return CompletableFuture.completedFuture(replan(state, "计划解析失败: " + e.getMessage()));
 		}
-		String mainQuery = state.value(GraphKeys.MAIN_QUERY, String.class)
-			.orElse(state.value(GraphKeys.INPUT, String.class).orElse(""));
-		String schema = state.value(GraphKeys.SCHEMA, String.class).orElse("无");
-		String knowledge = state.value(GraphKeys.KNOWLEDGE, String.class).orElse("无");
-		long agentId = NodeUtils.longOf(state, GraphKeys.AGENT_ID);
+		String mainQuery = state.value(GraphKeys.Info.MAIN_QUERY, String.class)
+			.orElse(state.value(GraphKeys.Info.INPUT, String.class).orElse(""));
+		String schema = state.value(GraphKeys.Info.SCHEMA, String.class).orElse("无");
+		String knowledge = state.value(GraphKeys.Info.KNOWLEDGE, String.class).orElse("无");
+		long agentId = NodeUtils.longOf(state, GraphKeys.Info.AGENT_ID);
 		AgentBizTableService.DatabaseTarget target = tableService.databaseTargetOf(agentId,
-				NodeUtils.stringList(state, GraphKeys.RECALLED_TABLES));
+				NodeUtils.stringList(state, GraphKeys.Info.RECALLED_TABLES));
 		if (target == null) {
-			return CompletableFuture.completedFuture(Map.of(GraphKeys.SQL_NEXT, "end", GraphKeys.FINAL_ANSWER,
-					"无法定位分析目标库(智能体未绑定数据表,或数据表跨多个库无法判定),本轮分析无法继续。", GraphKeys.PROGRESS,
+			return CompletableFuture.completedFuture(Map.of(GraphKeys.Control.SQL_NEXT, "end", GraphKeys.Info.FINAL_ANSWER,
+					"无法定位分析目标库(智能体未绑定数据表,或数据表跨多个库无法判定),本轮分析无法继续。", GraphKeys.Info.PROGRESS,
 					"SQL 生成终止:无法定位目标库"));
 		}
-		String reason = state.value(GraphKeys.SQL_REPAIR_REASON, String.class).orElse("");
-		String previousSql = state.value(GraphKeys.SQL_QUERY, String.class).orElse("");
+		String reason = state.value(GraphKeys.Control.SQL_REPAIR_REASON, String.class).orElse("");
+		String previousSql = state.value(GraphKeys.Info.SQL_QUERY, String.class).orElse("");
+		// 重写上下文:首次为空;重写时给原因 + 上次 SQL(带着原文改)
+		String retryContext = "(无)";
+		if (StringUtils.hasText(reason)) {
+			retryContext = StringUtils.hasText(previousSql) ? reason + "\n\n[上次生成的 SQL]\n" + previousSql : reason;
+		}
 		String user = NodeUtils.renderPrompt(promptMapper, SqlConstants.SQL_GENERATE,
 				Map.of("dialect", target.dialect(), "schema", schema, "knowledge", knowledge, "main_query",
-						mainQuery, "task", task, "retry_context", retryContext(reason, previousSql)));
+						mainQuery, "task", task, "retry_context", retryContext));
 		String output = aiModelServiceFactory.getChatClient().prompt().user(user).call().content();
 		String sql = NodeUtils.stripFence(output).trim();
 		if (!StringUtils.hasText(sql)) {
 			log.warn("SQL 生成为空(第 {} 次尝试),重试", attempt);
-			return CompletableFuture.completedFuture(Map.of(GraphKeys.SQL_NEXT, "regenerate", GraphKeys.SQL_RETRY_COUNT,
-					attempt, GraphKeys.SQL_REPAIR_REASON, "生成结果为空", GraphKeys.PROGRESS, "SQL 生成结果为空,重试"));
+			return CompletableFuture.completedFuture(Map.of(GraphKeys.Control.SQL_NEXT, "regenerate", GraphKeys.Control.SQL_RETRY_COUNT,
+					attempt, GraphKeys.Control.SQL_REPAIR_REASON, "生成结果为空", GraphKeys.Info.PROGRESS, "SQL 生成结果为空,重试"));
 		}
 		log.info("SQL 生成完成(第 {} 次尝试): {}", attempt, NodeUtils.brief(sql));
-		return CompletableFuture.completedFuture(Map.of(GraphKeys.SQL_QUERY, sql, GraphKeys.SQL_NEXT, "validate",
-				GraphKeys.SQL_RETRY_COUNT, attempt, GraphKeys.SQL_REPAIR_REASON, "", GraphKeys.PROGRESS,
+		return CompletableFuture.completedFuture(Map.of(GraphKeys.Info.SQL_QUERY, sql, GraphKeys.Control.SQL_NEXT, "validate",
+				GraphKeys.Control.SQL_RETRY_COUNT, attempt, GraphKeys.Control.SQL_REPAIR_REASON, "", GraphKeys.Info.PROGRESS,
 				"SQL 生成完成(第 " + attempt + " 次尝试)"));
 	}
 
 	/** 升级重规划:计数 +1;超限终止语收场 */
 	private Map<String, Object> replan(OverAllState state, String reason) {
-		int count = NodeUtils.intOf(state, GraphKeys.PLAN_RETRY_COUNT, 0) + 1;
+		int count = NodeUtils.intOf(state, GraphKeys.Control.PLAN_RETRY_COUNT, 0) + 1;
 		if (count > PlanConstants.PLAN_RETRY_MAX) {
 			log.error("SQL 组升级重规划超限,终止: {}", reason);
-			return Map.of(GraphKeys.SQL_NEXT, "end", GraphKeys.FINAL_ANSWER, TERMINATION, GraphKeys.PROGRESS,
+			return Map.of(GraphKeys.Control.SQL_NEXT, "end", GraphKeys.Info.FINAL_ANSWER, TERMINATION, GraphKeys.Info.PROGRESS,
 					"SQL 组重试超限且重规划超限:终止");
 		}
 		log.warn("SQL 组升级重规划(第 {} 次): {}", count, reason);
-		return Map.of(GraphKeys.SQL_NEXT, "replan", GraphKeys.PLAN_RETRY_COUNT, count, GraphKeys.PLAN_REPAIR_REASON,
-				reason, GraphKeys.PLAN_STEP_NO, 1, GraphKeys.SQL_RETRY_COUNT, 0, GraphKeys.PROGRESS, "SQL 组重试超限:升级重规划");
-	}
-
-	/** 重写上下文:首次为空;重写时给原因 + 上次 SQL(带着原文改) */
-	private String retryContext(String reason, String previousSql) {
-		if (!StringUtils.hasText(reason)) {
-			return "(无)";
-		}
-		String context = reason;
-		if (StringUtils.hasText(previousSql)) {
-			context += "\n\n[上次生成的 SQL]\n" + previousSql;
-		}
-		return context;
-	}
-
-	/** 最近一次打回原因(升级路径拼进重写原因) */
-	private String lastReason(OverAllState state) {
-		String reason = state.value(GraphKeys.SQL_REPAIR_REASON, String.class).orElse("");
-		return StringUtils.hasText(reason) ? reason : "多次尝试未成功";
+		return Map.of(GraphKeys.Control.SQL_NEXT, "replan", GraphKeys.Control.PLAN_RETRY_COUNT, count, GraphKeys.Control.PLAN_REPAIR_REASON,
+				reason, GraphKeys.Control.PLAN_STEP_NO, 1, GraphKeys.Control.SQL_RETRY_COUNT, 0, GraphKeys.Info.PROGRESS, "SQL 组重试超限:升级重规划");
 	}
 
 }

@@ -41,36 +41,36 @@ public class PlanExecutorNode implements AsyncNodeAction {
 	@Observed(name = "node.planExecutor", contextualName = "计划执行")
 	public CompletableFuture<Map<String, Object>> apply(OverAllState state) {
 		// 人工确认闸:开启则先转确认节点(确认后开关被关掉,后续步不再拦)——闸在计划读取之前
-		if (Boolean.TRUE.equals(state.value(GraphKeys.HUMAN_REVIEW_ENABLED, false))) {
-			return CompletableFuture.completedFuture(Map.of(GraphKeys.PLAN_NEXT_NODE, ReviewConstants.PLAN_REVIEW, GraphKeys.PROGRESS,
+		if (Boolean.TRUE.equals(state.value(GraphKeys.Control.HUMAN_REVIEW_ENABLED, false))) {
+			return CompletableFuture.completedFuture(Map.of(GraphKeys.Control.PLAN_NEXT_NODE, ReviewConstants.PLAN_REVIEW, GraphKeys.Info.PROGRESS,
 					"计划待确认:请确认后继续执行"));
 		}
-		String planJson = state.value(GraphKeys.PLAN_JSON, String.class).orElse("");
-		int step = NodeUtils.intOf(state, GraphKeys.PLAN_STEP_NO, 1);
+		String planJson = state.value(GraphKeys.Info.PLAN_JSON, String.class).orElse("");
+		int step = NodeUtils.intOf(state, GraphKeys.Control.PLAN_STEP_NO, 1);
 		Plan plan = PlanUtils.parse(objectMapper, planJson);
 		int size = plan.getPlanSteps().size();
-		boolean light = Boolean.TRUE.equals(state.value(GraphKeys.NL2SQL_ENABLED, false));
+		boolean light = Boolean.TRUE.equals(state.value(GraphKeys.Control.NL2SQL_ENABLED, false));
 		// 步数走完:轻档直接到终点(跳过报告,SQL 文本即结果);常规走报告固定收尾(计划里没有报告步)
 		if (step > size) {
 			if (light) {
 				log.info("轻档模式:计划执行完成(共 {} 步),直接收束", size);
-				return CompletableFuture.completedFuture(Map.of(GraphKeys.PLAN_NEXT_NODE, StateGraph.END, GraphKeys.PROGRESS,
+				return CompletableFuture.completedFuture(Map.of(GraphKeys.Control.PLAN_NEXT_NODE, StateGraph.END, GraphKeys.Info.PROGRESS,
 						"轻档完成:SQL 已生成并执行"));
 			}
 			log.info("计划执行完成: 共 {} 步,转报告生成", size);
-			return CompletableFuture.completedFuture(Map.of(GraphKeys.PLAN_NEXT_NODE, ReportConstants.REPORT_GENERATOR,
-					GraphKeys.PROGRESS, "计划执行完成:共 " + size + " 步,开始生成报告"));
+			return CompletableFuture.completedFuture(Map.of(GraphKeys.Control.PLAN_NEXT_NODE, ReportConstants.REPORT_GENERATOR,
+					GraphKeys.Info.PROGRESS, "计划执行完成:共 " + size + " 步,开始生成报告"));
 		}
 		PlanStep current = PlanUtils.stepAt(plan, step);
 		// 轻档校验:计划侧应只排 SQL 步;模型顶风排了 python 步则不执行,直接收束(保险丝,不丢已得结果)
 		if (light && PythonConstants.PYTHON_GENERATE.equals(current.getSelectGroup())) {
 			log.info("轻档模式:第 {} 步为 Python 步,按约定不执行,直接收束", step);
-			return CompletableFuture.completedFuture(Map.of(GraphKeys.PLAN_NEXT_NODE, StateGraph.END, GraphKeys.PROGRESS,
+			return CompletableFuture.completedFuture(Map.of(GraphKeys.Control.PLAN_NEXT_NODE, StateGraph.END, GraphKeys.Info.PROGRESS,
 					"轻档完成:SQL 已生成并执行"));
 		}
 		log.info("派活: 第 {}/{} 步 → {}", step, size, current.getSelectGroup());
 		String groupText = PythonConstants.PYTHON_GENERATE.equals(current.getSelectGroup()) ? "Python 生成" : "SQL 生成";
-		return CompletableFuture.completedFuture(Map.of(GraphKeys.PLAN_NEXT_NODE, current.getSelectGroup(), GraphKeys.PROGRESS,
+		return CompletableFuture.completedFuture(Map.of(GraphKeys.Control.PLAN_NEXT_NODE, current.getSelectGroup(), GraphKeys.Info.PROGRESS,
 				"计划执行:第 " + step + "/" + size + " 步(" + groupText + ")"));
 	}
 

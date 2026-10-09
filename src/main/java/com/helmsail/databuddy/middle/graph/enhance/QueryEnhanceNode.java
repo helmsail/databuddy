@@ -51,9 +51,9 @@ public class QueryEnhanceNode implements AsyncNodeAction {
 	@Override
 	@Observed(name = "node.queryEnhance", contextualName = "查询增强")
 	public CompletableFuture<Map<String, Object>> apply(OverAllState state) {
-		String input = state.value(GraphKeys.INPUT, String.class).orElse("");
-		String knowledge = state.value(GraphKeys.KNOWLEDGE, String.class).orElse("无");
-		String sessionMemory = state.value(GraphKeys.SESSION_MEMORY, String.class).orElse("(无)");
+		String input = state.value(GraphKeys.Info.INPUT, String.class).orElse("");
+		String knowledge = state.value(GraphKeys.Info.KNOWLEDGE, String.class).orElse("无");
+		String sessionMemory = state.value(GraphKeys.Info.SESSION_MEMORY, String.class).orElse("(无)");
 		String user = NodeUtils.renderPrompt(promptMapper, EnhanceConstants.QUERY_ENHANCE,
 				Map.of("input", input, "knowledge", knowledge, "session_memory", sessionMemory,
 						"current_time", LocalDateTime.now().format(TIME_FORMAT)));
@@ -69,15 +69,15 @@ public class QueryEnhanceNode implements AsyncNodeAction {
 			if (StringUtils.hasText(mainQuery)) {
 				List<String> backupQueries = strings(root.path("backup_queries"));
 				log.info("查询增强: 主查询=\"{}\", 备用查询 {} 条", mainQuery, backupQueries.size());
-				return Map.of(GraphKeys.MAIN_QUERY, mainQuery, GraphKeys.BACKUP_QUERIES, backupQueries,
-						GraphKeys.PROGRESS, "查询增强完成:备用查询 " + backupQueries.size() + " 条");
+				return Map.of(GraphKeys.Info.MAIN_QUERY, mainQuery, GraphKeys.Info.BACKUP_QUERIES, backupQueries,
+						GraphKeys.Info.PROGRESS, "查询增强完成:备用查询 " + backupQueries.size() + " 条");
 			}
 			log.warn("查询增强未产出有效查询,回退原问题: {}", NodeUtils.brief(output));
 		}
 		catch (RuntimeException e) {
 			log.warn("查询增强调用或输出不可解析,回退原问题: {}", e.getMessage());
 		}
-		return Map.of(GraphKeys.MAIN_QUERY, input, GraphKeys.BACKUP_QUERIES, List.of(), GraphKeys.PROGRESS,
+		return Map.of(GraphKeys.Info.MAIN_QUERY, input, GraphKeys.Info.BACKUP_QUERIES, List.of(), GraphKeys.Info.PROGRESS,
 				"查询增强回退:沿用原问题");
 	}
 

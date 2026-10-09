@@ -43,11 +43,11 @@ public class PythonExecuteNode implements AsyncNodeAction {
 	@Override
 	@Observed(name = "node.pythonExecute", contextualName = "Python 执行")
 	public CompletableFuture<Map<String, Object>> apply(OverAllState state) {
-		String code = state.value(GraphKeys.PYTHON_CODE, String.class).orElse("");
+		String code = state.value(GraphKeys.Info.PYTHON_CODE, String.class).orElse("");
 		if (!StringUtils.hasText(code)) {
 			return CompletableFuture.completedFuture(fail(state, "生成结果为空,没有可执行的代码"));
 		}
-		String inputJson = state.value(GraphKeys.SQL_RESULT, String.class).orElse("{}");
+		String inputJson = state.value(GraphKeys.Info.SQL_RESULT, String.class).orElse("{}");
 		SandboxResult result;
 		try {
 			result = sandboxFactory.execute(code, inputJson);
@@ -59,31 +59,31 @@ public class PythonExecuteNode implements AsyncNodeAction {
 		if (!success) {
 			return CompletableFuture.completedFuture(fail(state, failureReason(result)));
 		}
-		int step = NodeUtils.intOf(state, GraphKeys.PLAN_STEP_NO, 1);
+		int step = NodeUtils.intOf(state, GraphKeys.Control.PLAN_STEP_NO, 1);
 		String stdout = result.stdout() == null ? "" : result.stdout();
 		String files = filesText(result);
 		Map<String, String> results = PlanUtils.withEntry(stepResults(state), "step_" + step, withFiles(stdout, files));
 		log.info("Python 执行成功: 第 {} 步, stdout {} 字符, 产物: {}", step, stdout.length(), files);
-		return CompletableFuture.completedFuture(Map.of(GraphKeys.PYTHON_RESULT, stdout, GraphKeys.PYTHON_FAIL_REASON, "",
-				GraphKeys.PYTHON_NEXT, "analyze", GraphKeys.STEP_RESULTS, results, GraphKeys.PROGRESS,
+		return CompletableFuture.completedFuture(Map.of(GraphKeys.Info.PYTHON_RESULT, stdout, GraphKeys.Control.PYTHON_FAIL_REASON, "",
+				GraphKeys.Control.PYTHON_NEXT, "analyze", GraphKeys.Info.STEP_RESULTS, results, GraphKeys.Info.PROGRESS,
 				"Python 执行完成:" + filesNote(result)));
 	}
 
 	/** 失败:未超限打回生成(带原因);超限升级重规划,再超限终止语收场 */
 	private Map<String, Object> fail(OverAllState state, String reason) {
-		int attempt = NodeUtils.intOf(state, GraphKeys.PYTHON_RETRY_COUNT, 0);
+		int attempt = NodeUtils.intOf(state, GraphKeys.Control.PYTHON_RETRY_COUNT, 0);
 		log.warn("Python 执行失败(第 {} 次尝试): {}", attempt, reason);
 		if (attempt >= PythonConstants.PYTHON_RETRY_MAX) {
-			int count = NodeUtils.intOf(state, GraphKeys.PLAN_RETRY_COUNT, 0) + 1;
+			int count = NodeUtils.intOf(state, GraphKeys.Control.PLAN_RETRY_COUNT, 0) + 1;
 			if (count > PlanConstants.PLAN_RETRY_MAX) {
-				return Map.of(GraphKeys.PYTHON_FAIL_REASON, reason, GraphKeys.PYTHON_NEXT, "end", GraphKeys.FINAL_ANSWER,
-						TERMINATION, GraphKeys.PROGRESS, "Python 组重试超限且重规划超限:终止");
+				return Map.of(GraphKeys.Control.PYTHON_FAIL_REASON, reason, GraphKeys.Control.PYTHON_NEXT, "end", GraphKeys.Info.FINAL_ANSWER,
+						TERMINATION, GraphKeys.Info.PROGRESS, "Python 组重试超限且重规划超限:终止");
 			}
-			return Map.of(GraphKeys.PYTHON_FAIL_REASON, reason, GraphKeys.PYTHON_NEXT, "replan", GraphKeys.PLAN_RETRY_COUNT,
-					count, GraphKeys.PLAN_REPAIR_REASON, "Python 组多次失败: " + reason, GraphKeys.PLAN_STEP_NO, 1,
-					GraphKeys.PYTHON_RETRY_COUNT, 0, GraphKeys.PROGRESS, "Python 组重试超限:升级重规划");
+			return Map.of(GraphKeys.Control.PYTHON_FAIL_REASON, reason, GraphKeys.Control.PYTHON_NEXT, "replan", GraphKeys.Control.PLAN_RETRY_COUNT,
+					count, GraphKeys.Control.PLAN_REPAIR_REASON, "Python 组多次失败: " + reason, GraphKeys.Control.PLAN_STEP_NO, 1,
+					GraphKeys.Control.PYTHON_RETRY_COUNT, 0, GraphKeys.Info.PROGRESS, "Python 组重试超限:升级重规划");
 		}
-		return Map.of(GraphKeys.PYTHON_FAIL_REASON, reason, GraphKeys.PYTHON_NEXT, "regenerate", GraphKeys.PROGRESS,
+		return Map.of(GraphKeys.Control.PYTHON_FAIL_REASON, reason, GraphKeys.Control.PYTHON_NEXT, "regenerate", GraphKeys.Info.PROGRESS,
 				"Python 执行失败,重新生成");
 	}
 
@@ -126,7 +126,7 @@ public class PythonExecuteNode implements AsyncNodeAction {
 
 	/** 分步结果累积(整表回写:REPLACE 键语义) */
 	private Map<String, String> stepResults(OverAllState state) {
-		Object raw = state.value(GraphKeys.STEP_RESULTS).orElse(null);
+		Object raw = state.value(GraphKeys.Info.STEP_RESULTS).orElse(null);
 		if (raw instanceof Map<?, ?> map) {
 			Map<String, String> results = new HashMap<>();
 			map.forEach((key, value) -> results.put(String.valueOf(key), value == null ? "" : String.valueOf(value)));

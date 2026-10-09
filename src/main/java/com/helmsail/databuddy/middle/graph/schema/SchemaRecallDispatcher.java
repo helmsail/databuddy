@@ -17,7 +17,7 @@ public class SchemaRecallDispatcher implements EdgeAction {
 
 	@Override
 	public String apply(OverAllState state) {
-		String terminated = state.value(GraphKeys.FINAL_ANSWER, String.class).orElse("");
+		String terminated = state.value(GraphKeys.Info.FINAL_ANSWER, String.class).orElse("");
 		return StringUtils.hasText(terminated) ? END : RelationConstants.TABLE_RELATION;
 	}
 
