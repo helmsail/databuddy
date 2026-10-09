@@ -13,11 +13,7 @@ import org.springframework.util.StringUtils;
 
 import com.fasterxml.jackson.annotation.JsonPropertyDescription;
 import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ArrayNode;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.helmsail.databuddy.agent.Agent;
 import com.helmsail.databuddy.agent.AgentService;
 import com.helmsail.databuddy.exception.BusinessException;
 import com.helmsail.databuddy.exception.ErrorCode;
@@ -27,7 +23,7 @@ import lombok.extern.slf4j.Slf4j;
 
 /**
  * MCP 工具服务(入口二):把图能力暴露给 MCP 客户端(Claude/Cursor 等)。
- * 三个工具:list_agents(选 agentId)/ nl2sql(回 SQL 文本)/ query_data(回数据预览);
+ * 两个工具:list_agents(选 agentId)/ nl2sql(回 SQL 文本);
  * 底层共用 AgentService.run(唯一执行入口:nl2sqlMode 参数决定图内走法,本层阻塞收帧并解释);业务错误按"工具结果文本"返回
  * 而不是协议异常(主流约定:让调用方 LLM 能读到原因并转述)。
  * 线程模型(实证):MCP 工具为同步契约,SDK 传输层(WebFlux 0.17.0)不做调度器卸载,工具在请求线程上同步执行;
@@ -37,9 +33,6 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 @Service
 public class McpServerService {
-
-	/** query_data 预览行数上限(MCP 客户端上下文预算;超出以 row_count/truncated 说明) */
-	private static final int PREVIEW_ROWS = 50;
 
 	private final AgentService agentService;
 
@@ -55,15 +48,16 @@ public class McpServerService {
 			@JsonPropertyDescription("智能体 ID(数字字符串);可先调用 list_agents 工具获取") String agentId) {
 	}
 
-	/** query_data 入参 */
-	public record QueryDataRequest(@JsonPropertyDescription("自然语言数据问题,例如:上个月各渠道的订单总额是多少") String naturalQuery,
-			@JsonPropertyDescription("智能体 ID(数字字符串);可先调用 list_agents 工具获取") String agentId) {
-	}
-
-	@Tool(name = "list_agents", description = "查询可用智能体列表(含 ID、名称与描述)。调用 nl2sql 或 query_data 前可先用本工具确定 agentId。")
+	@Tool(name = "list_agents", description = "查询可用智能体列表(含 ID、名称与描述)。调用 nl2sql 前可先用本工具确定 agentId。")
 	public String listAgents() {
 		return guard(() -> {
-			List<Map<String, Object>> agents = agentService.list().stream().map(this::brief).toList();
+			List<Map<String, Object>> agents = agentService.list().stream().map(agent -> {
+				Map<String, Object> brief = new LinkedHashMap<>();
+				brief.put("id", agent.getId());
+				brief.put("name", agent.getName());
+				brief.put("description", agent.getDescription() == null ? "" : agent.getDescription());
+				return brief;
+			}).toList();
 			try {
 				return objectMapper.writeValueAsString(agents);
 			}
@@ -73,25 +67,50 @@ public class McpServerService {
 		});
 	}
 
-	@Tool(name = "nl2sql", description = "将自然语言问题转换为 SQL 语句:只生成并校验 SQL 并返回 SQL 文本,不返回数据。需要查询结果数据本身时请改用 query_data。")
+	@Tool(name = "nl2sql", description = "将自然语言问题转换为 SQL 语句:只生成并校验 SQL 并返回 SQL 文本,不返回数据。")
 	public String nl2sql(Nl2SqlRequest request) {
 		return guard(() -> {
-			requireRequest(request);
-			List<GraphSseChunk> chunks = execute(requireAgentId(request.agentId()),
-					requireQuestion(request.naturalQuery()));
+			if (request == null) {
+				throw new BusinessException(ErrorCode.INVALID_INPUT, "参数缺失: 请按工具 inputSchema 传入 request 对象(naturalQuery 与 agentId)");
+			}
+			if (!StringUtils.hasText(request.agentId())) {
+				throw new BusinessException(ErrorCode.INVALID_INPUT, "agentId 不能为空(可先调用 list_agents 获取)");
+			}
+			long agentId;
+			try {
+				agentId = Long.parseLong(request.agentId().trim());
+			}
+			catch (NumberFormatException e) {
+				throw new BusinessException(ErrorCode.INVALID_INPUT, "agentId 必须是数字: " + request.agentId());
+			}
+			if (!StringUtils.hasText(request.naturalQuery())) {
+				throw new BusinessException(ErrorCode.INVALID_INPUT, "naturalQuery 不能为空");
+			}
+			// 轻档跑图(nl2sqlMode=true):计划只排 SQL 步、跳过报告;MCP 为同步契约,阻塞收帧,error 帧转业务异常
+			List<ServerSentEvent<GraphSseChunk>> frames;
+			try {
+				frames = agentService.run(agentId, request.naturalQuery(), null, false, true).collectList().toFuture().get();
+			}
+			catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
+				throw new BusinessException(ErrorCode.SYSTEM_ERROR, "执行被中断", e);
+			}
+			catch (ExecutionException e) {
+				throw new BusinessException(ErrorCode.SYSTEM_ERROR, "执行等待失败: " + e.getMessage(), e);
+			}
+			List<GraphSseChunk> chunks = frames.stream().map(ServerSentEvent::data).toList();
+			String error = lastText(chunks, GraphSseChunk.ERROR);
+			if (StringUtils.hasText(error)) {
+				throw new BusinessException(ErrorCode.SYSTEM_ERROR, error);
+			}
 			String sql = lastText(chunks, GraphSseChunk.SQL);
-			return StringUtils.hasText(sql) ? sql : notCompleted(chunks);
-		});
-	}
-
-	@Tool(name = "query_data", description = "回答数据问题:自动完成取数分析并返回查询结果数据(含 SQL、列名、前 50 行数据与总行数)。适合需要具体数值、排名、对比的问题。")
-	public String queryData(QueryDataRequest request) {
-		return guard(() -> {
-			requireRequest(request);
-			List<GraphSseChunk> chunks = execute(requireAgentId(request.agentId()),
-					requireQuestion(request.naturalQuery()));
-			String resultJson = lastText(chunks, GraphSseChunk.RESULT);
-			return StringUtils.hasText(resultJson) ? preview(resultJson) : notCompleted(chunks);
+			if (StringUtils.hasText(sql)) {
+				return sql;
+			}
+			// 未产出 SQL:优先返回图的终止语(text 帧),否则给通用说明
+			String answer = lastText(chunks, GraphSseChunk.TEXT);
+			return StringUtils.hasText(answer) ? "未能完成: " + answer
+					: "未能完成:未生成结果(请检查智能体是否绑定了数据表,以及模型配置是否可用)";
 		});
 	}
 
@@ -110,51 +129,7 @@ public class McpServerService {
 		}
 	}
 
-	/** 结果预览:契约 JSON 收敛为 {sql,columns,rows(前 PREVIEW_ROWS 行),row_count,truncated} */
-	private String preview(String resultJson) {
-		try {
-			JsonNode root = objectMapper.readTree(resultJson);
-			JsonNode all = root.path("rows");
-			ObjectNode preview = objectMapper.createObjectNode();
-			preview.put("sql", root.path("sql").asText(""));
-			preview.set("columns", root.path("columns"));
-			ArrayNode rows = objectMapper.createArrayNode();
-			for (int i = 0; i < all.size() && i < PREVIEW_ROWS; i++) {
-				rows.add(all.get(i));
-			}
-			preview.set("rows", rows);
-			preview.put("row_count", root.path("row_count").asInt(all.size()));
-			preview.put("truncated", root.path("truncated").asBoolean(false) || all.size() > rows.size());
-			return objectMapper.writeValueAsString(preview);
-		}
-		catch (Exception e) {
-			log.warn("结果预览构建失败,按原样返回: {}", e.getMessage());
-			return resultJson;
-		}
-	}
-
-	/** 统一执行(轻档 = run 同一入口):MCP 为同步契约,阻塞收帧;error 帧(入口校验 / 执行失败)转业务异常,由 guard 转文本 */
-	private List<GraphSseChunk> execute(long agentId, String question) {
-		List<ServerSentEvent<GraphSseChunk>> frames;
-		try {
-			frames = agentService.run(agentId, question, null, false, true).collectList().toFuture().get();
-		}
-		catch (InterruptedException e) {
-			Thread.currentThread().interrupt();
-			throw new BusinessException(ErrorCode.SYSTEM_ERROR, "执行被中断", e);
-		}
-		catch (ExecutionException e) {
-			throw new BusinessException(ErrorCode.SYSTEM_ERROR, "执行等待失败: " + e.getMessage(), e);
-		}
-		List<GraphSseChunk> chunks = frames.stream().map(ServerSentEvent::data).toList();
-		String error = lastText(chunks, GraphSseChunk.ERROR);
-		if (StringUtils.hasText(error)) {
-			throw new BusinessException(ErrorCode.SYSTEM_ERROR, error);
-		}
-		return chunks;
-	}
-
-	/** 取某类帧的最后一个文本(error / sql / result / text;无则空串) */
+	/** 取某类帧的最后一个文本(error / sql / text;无则空串) */
 	private static String lastText(List<GraphSseChunk> chunks, String eventType) {
 		String text = "";
 		for (GraphSseChunk chunk : chunks) {
@@ -163,50 +138,6 @@ public class McpServerService {
 			}
 		}
 		return text;
-	}
-
-	/** 未产出目标字段:优先返回图的终止语(text 帧),否则给通用说明 */
-	private String notCompleted(List<GraphSseChunk> chunks) {
-		String answer = lastText(chunks, GraphSseChunk.TEXT);
-		return StringUtils.hasText(answer) ? "未能完成: " + answer
-				: "未能完成:未生成结果(请检查智能体是否绑定了数据表,以及模型配置是否可用)";
-	}
-
-	/** 智能体摘要(工具输出精简字段) */
-	private Map<String, Object> brief(Agent agent) {
-		Map<String, Object> brief = new LinkedHashMap<>();
-		brief.put("id", agent.getId());
-		brief.put("name", agent.getName());
-		brief.put("description", agent.getDescription() == null ? "" : agent.getDescription());
-		return brief;
-	}
-
-	/** 参数对象校验:SDK 对缺失参数注入 null(调用方未按 inputSchema 嵌套传 request),给出可读错误 */
-	private void requireRequest(Object request) {
-		if (request == null) {
-			throw new BusinessException(ErrorCode.INVALID_INPUT, "参数缺失: 请按工具 inputSchema 传入 request 对象(naturalQuery 与 agentId)");
-		}
-	}
-
-	/** 参数校验:agentId 必填且为数字 */
-	private long requireAgentId(String agentId) {
-		if (!StringUtils.hasText(agentId)) {
-			throw new BusinessException(ErrorCode.INVALID_INPUT, "agentId 不能为空(可先调用 list_agents 获取)");
-		}
-		try {
-			return Long.parseLong(agentId.trim());
-		}
-		catch (NumberFormatException e) {
-			throw new BusinessException(ErrorCode.INVALID_INPUT, "agentId 必须是数字: " + agentId);
-		}
-	}
-
-	/** 参数校验:问题必填 */
-	private String requireQuestion(String question) {
-		if (!StringUtils.hasText(question)) {
-			throw new BusinessException(ErrorCode.INVALID_INPUT, "question 不能为空");
-		}
-		return question;
 	}
 
 }
