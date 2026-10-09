@@ -1,4 +1,4 @@
-package com.helmsail.databuddy.middle.python.core;
+package com.helmsail.databuddy.middle.python;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -13,8 +13,6 @@ import java.util.stream.Stream;
 
 import com.helmsail.databuddy.exception.BusinessException;
 import com.helmsail.databuddy.exception.ErrorCode;
-import com.helmsail.databuddy.middle.python.SandboxFailure;
-import com.helmsail.databuddy.middle.python.SandboxResult;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -168,14 +166,14 @@ public class Sandbox {
 		if (result.timedOut()) {
 			dirty = true;
 			log.warn("沙箱容器 {} 执行超时,容器将销毁", name);
-			return new SandboxResult(result.stdout(), result.stderr(), -1, List.of(), SandboxFailure.TIMEOUT);
+			return new SandboxResult(result.stdout(), result.stderr(), -1, List.of(), SandboxResult.Type.TIMEOUT);
 		}
-		SandboxFailure failure = SandboxFailure.classify(result.exitCode(), result.stderr());
-		if (failure == SandboxFailure.ENV_ERROR) {
+		SandboxResult.Type type = SandboxResult.Type.classify(result.exitCode(), result.stderr());
+		if (type == SandboxResult.Type.ENV_ERROR) {
 			dirty = true;
 			log.warn("沙箱容器 {} 出现环境层错误,容器将销毁", name);
 		}
-		return new SandboxResult(result.stdout(), result.stderr(), result.exitCode(), readOutputFiles(), failure);
+		return new SandboxResult(result.stdout(), result.stderr(), result.exitCode(), readOutputFiles(), type);
 	}
 
 	/** 健康检查:容器处于 running 视为健康 */

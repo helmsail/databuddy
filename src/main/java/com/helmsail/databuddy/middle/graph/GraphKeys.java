@@ -129,6 +129,9 @@ public final class GraphKeys {
 		/** Python 标准输出(stdout,约定的 JSON 结果) */
 		public static final String PYTHON_RESULT = "python_result";
 
+		/** Python 图片产物(base64 JSON 数组 [{name,mime,data}];执行节点成功时写,推流层读发 image 帧) */
+		public static final String PYTHON_IMAGES = "python_images";
+
 		// —— 产出 ——
 
 		/** 最终回复(END 输出的全量状态中提取) */

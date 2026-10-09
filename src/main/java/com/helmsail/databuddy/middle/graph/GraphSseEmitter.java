@@ -37,6 +37,11 @@ class GraphSseEmitter {
 		emit(GraphSseChunk.builder().eventType(GraphSseChunk.RESULT).node(node).text(text).build());
 	}
 
+	/** 图片帧(Python 产物图 base64 JSON) */
+	void image(String node, String text) {
+		emit(GraphSseChunk.builder().eventType(GraphSseChunk.IMAGE).node(node).text(text).build());
+	}
+
 	/** 计划帧(挂起轮:待确认计划 JSON) */
 	void plan(String text) {
 		emit(GraphSseChunk.builder().eventType(GraphSseChunk.PLAN).text(text).build());

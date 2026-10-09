@@ -47,6 +47,9 @@ class GraphThread {
 	/** 已播报的结果(SQL_RESULT 帧去重) */
 	private volatile String lastResult;
 
+	/** 已播报的图片(PYTHON_IMAGES 帧去重) */
+	private volatile String lastImage;
+
 	private volatile Disposable disposable;
 
 	private final AtomicBoolean stopped = new AtomicBoolean(false);
@@ -107,7 +110,7 @@ class GraphThread {
 		sink.tryEmitComplete();
 	}
 
-	// —— 节点产出:END 记录最终回复;过程三帧去重播报(同一内容只播一次,空不播) ——
+	// —— 节点产出:END 记录最终回复;过程四帧去重播报(同一内容只播一次,空不播) ——
 
 	/** 记录最终回复(END 帧提取;空则忽略) */
 	void collectAnswer(String answer) {
@@ -137,6 +140,14 @@ class GraphThread {
 		if (StringUtils.hasText(text) && !text.equals(lastResult)) {
 			lastResult = text;
 			frames.result(node, text);
+		}
+	}
+
+	/** 图片帧 */
+	void image(String node, String text) {
+		if (StringUtils.hasText(text) && !text.equals(lastImage)) {
+			lastImage = text;
+			frames.image(node, text);
 		}
 	}
 

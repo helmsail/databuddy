@@ -121,6 +121,7 @@ public class GraphConfig {
 				Map.entry(GraphKeys.Control.PYTHON_REPAIR_REASON, KeyStrategy.REPLACE),
 				Map.entry(GraphKeys.Control.PYTHON_PASSED, KeyStrategy.REPLACE),
 				Map.entry(GraphKeys.Info.PYTHON_RESULT, KeyStrategy.REPLACE),
+				Map.entry(GraphKeys.Info.PYTHON_IMAGES, KeyStrategy.REPLACE),
 				Map.entry(GraphKeys.Info.STEP_RESULTS, KeyStrategy.REPLACE));
 		return new StateGraph("databuddy", keyStrategyFactory)
 			// 拓扑:入口 → 意图识别 → 按分类分流(chat → 终点;data_analysis → 知识召回)

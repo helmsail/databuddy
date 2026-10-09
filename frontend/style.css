@@ -400,6 +400,11 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: 12px; }
 .wtl-badge { margin-left: 6px; }
 .wtl-body { margin-top: 6px; display: flex; flex-direction: column; gap: 6px; }
 
+/* Python 产物图 */
+.wtl-figure { margin: 0; }
+.wtl-figure img { max-width: 100%; border: 1px solid var(--line); border-radius: var(--radius-sm); display: block; }
+.wtl-figure figcaption { margin-top: 4px; font-size: 11px; color: var(--text-2); }
+
 /* SQL 代码块 */
 pre.code {
   margin: 0; padding: 8px 10px; border-radius: 8px;

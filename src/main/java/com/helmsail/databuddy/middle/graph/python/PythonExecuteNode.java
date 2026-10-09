@@ -1,6 +1,9 @@
 package com.helmsail.databuddy.middle.graph.python;
 
+import java.util.ArrayList;
+import java.util.Base64;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 
@@ -11,17 +14,19 @@ import org.springframework.util.StringUtils;
 
 import com.alibaba.cloud.ai.graph.OverAllState;
 import com.alibaba.cloud.ai.graph.action.AsyncNodeAction;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.helmsail.databuddy.middle.graph.GraphKeys;
 import com.helmsail.databuddy.middle.graph.plan.PlanUtils;
 import com.helmsail.databuddy.middle.graph.util.NodeUtils;
-import com.helmsail.databuddy.middle.python.PythonSandboxFactory;
+import com.helmsail.databuddy.middle.python.PythonSandboxService;
 import com.helmsail.databuddy.middle.python.SandboxResult;
 
 import lombok.extern.slf4j.Slf4j;
 
 /**
  * Python 执行节点:把生成代码与数据素材(input.json = 最近一次 SQL 结果契约 JSON)交给沙箱运行。
- * 成功(stdout JSON 或 /work/output 产物):stdout 写 PYTHON_RESULT 与 STEP_RESULTS[step_N](产物清单随其后,报告可见),转分析;
+ * 成功(stdout JSON 或 /work/output 产物):stdout 写 PYTHON_RESULT 与 STEP_RESULTS[step_N](产物清单随其后,报告可见),
+ * 图片产物转 base64 写 PYTHON_IMAGES(推流层发 image 帧直显),转分析;
  * 失败(代码错/超时/无产出):原因写 PYTHON_REPAIR_REASON 打回生成重写;超限与否由生成口统一裁决(组内 ≤ PYTHON_RETRY_MAX → 升级重规划)。
  * 阻塞的沙箱调用发生在图订阅线程(boundedElastic)上,不占事件循环
  */
@@ -29,10 +34,13 @@ import lombok.extern.slf4j.Slf4j;
 @Component
 public class PythonExecuteNode implements AsyncNodeAction {
 
-	private final PythonSandboxFactory sandboxFactory;
+	private final PythonSandboxService sandboxService;
 
-	public PythonExecuteNode(PythonSandboxFactory sandboxFactory) {
-		this.sandboxFactory = sandboxFactory;
+	private final ObjectMapper objectMapper;
+
+	public PythonExecuteNode(PythonSandboxService sandboxService, ObjectMapper objectMapper) {
+		this.sandboxService = sandboxService;
+		this.objectMapper = objectMapper;
 	}
 
 	@Override
@@ -45,12 +53,12 @@ public class PythonExecuteNode implements AsyncNodeAction {
 		String inputJson = state.value(GraphKeys.Info.SQL_RESULT, String.class).orElse("{}");
 		SandboxResult result;
 		try {
-			result = sandboxFactory.execute(code, inputJson);
+			result = sandboxService.execute(code, inputJson);
 		}
 		catch (RuntimeException e) {
 			return CompletableFuture.completedFuture(fail(state, "沙箱不可用: " + e.getMessage()));
 		}
-		boolean success = result.failure() == null && result.exitCode() == 0 && result.hasOutput();
+		boolean success = result.type() == SandboxResult.Type.SUCCESS && result.hasOutput();
 		if (!success) {
 			return CompletableFuture.completedFuture(fail(state, failureReason(result)));
 		}
@@ -60,8 +68,8 @@ public class PythonExecuteNode implements AsyncNodeAction {
 		Map<String, String> results = PlanUtils.withEntry(stepResults(state), "step_" + step, withFiles(stdout, files));
 		log.info("Python 执行成功: 第 {} 步, stdout {} 字符, 产物: {}", step, stdout.length(), files);
 		return CompletableFuture.completedFuture(Map.of(GraphKeys.Info.PYTHON_RESULT, stdout, GraphKeys.Control.PYTHON_REPAIR_REASON, "",
-				GraphKeys.Control.PYTHON_NEXT, "analyze", GraphKeys.Info.STEP_RESULTS, results, GraphKeys.Info.PROGRESS,
-				"Python 执行完成:" + filesNote(result)));
+				GraphKeys.Control.PYTHON_NEXT, "analyze", GraphKeys.Info.STEP_RESULTS, results, GraphKeys.Info.PYTHON_IMAGES,
+				imagesJson(result), GraphKeys.Info.PROGRESS, "Python 执行完成:" + filesNote(result)));
 	}
 
 	/** 失败:原因写 PYTHON_REPAIR_REASON 打回生成(超限与否由生成口统一裁决) */
@@ -72,16 +80,56 @@ public class PythonExecuteNode implements AsyncNodeAction {
 				"Python 执行失败,重新生成");
 	}
 
-	/** 失败原因:分类(stderr 截断)——写进重写提示词供"带原文改" */
+	/** 失败原因:类型 + stderr(截断)——写进重写提示词供"带原文改";类型为成功但无产出时单独说明 */
 	private String failureReason(SandboxResult result) {
 		String stderr = result.stderr() == null ? "" : result.stderr();
-		if (result.failure() != null) {
-			return "失败类型: " + result.failure() + ";错误输出: " + NodeUtils.brief(stderr);
-		}
-		if (result.exitCode() != 0) {
-			return "退出码 " + result.exitCode() + ";错误输出: " + NodeUtils.brief(stderr);
+		if (result.type() != SandboxResult.Type.SUCCESS) {
+			return "失败类型: " + result.type() + ";错误输出: " + NodeUtils.brief(stderr);
 		}
 		return "无产出: 代码运行成功但没有输出(需要 stdout JSON 或 /work/output 产物)";
+	}
+
+	/** 图片产物转 base64 JSON 数组(name/mime/data);无图或序列化失败为"",不阻塞成功路径(清单已在 STEP_RESULTS) */
+	private String imagesJson(SandboxResult result) {
+		List<Map<String, String>> images = new ArrayList<>();
+		for (SandboxResult.OutputFile file : result.files()) {
+			String mime = mimeOf(file.name());
+			if (mime == null) {
+				continue;
+			}
+			images.add(Map.of("name", file.name(), "mime", mime, "data", Base64.getEncoder().encodeToString(file.content())));
+		}
+		if (images.isEmpty()) {
+			return "";
+		}
+		try {
+			return objectMapper.writeValueAsString(images);
+		}
+		catch (Exception e) {
+			log.warn("图片产物序列化失败,跳过直推: {}", e.getMessage());
+			return "";
+		}
+	}
+
+	/** 按文件名判定图片类型(非图片产物不进直推,仅保留清单) */
+	private static String mimeOf(String name) {
+		String lower = name.toLowerCase();
+		if (lower.endsWith(".png")) {
+			return "image/png";
+		}
+		if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) {
+			return "image/jpeg";
+		}
+		if (lower.endsWith(".gif")) {
+			return "image/gif";
+		}
+		if (lower.endsWith(".webp")) {
+			return "image/webp";
+		}
+		if (lower.endsWith(".svg")) {
+			return "image/svg+xml";
+		}
+		return null;
 	}
 
 	/** 产物清单文本:文件名(字节数);无产物为"无" */

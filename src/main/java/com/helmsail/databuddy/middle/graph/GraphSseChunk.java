@@ -38,6 +38,9 @@ public class GraphSseChunk {
 	/** 结果帧:SQL 执行结果(text = 结果 JSON:{step,sql,columns,rows,row_count,truncated}) */
 	public static final String RESULT = "result";
 
+	/** 图片帧:Python 产物图(text = JSON 数组 [{name,mime,data(base64)}]) */
+	public static final String IMAGE = "image";
+
 	/** 会话键(= 图线程键;客户端据此停止/续跑) */
 	private String sessionId;
 

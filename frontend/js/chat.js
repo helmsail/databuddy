@@ -299,6 +299,9 @@ function renderBlocks(blocks, done) {
       } else if (b.type === 'result') {
         label = `<div class="wtl-label">SQL 执行结果${isActive ? '<span class="chip blue wtl-badge">进行中</span>' : ''}</div>`;
         body = chatState.showSqlResults ? `<div class="wtl-body">${renderResultSet(b.text)}</div>` : '';
+      } else if (b.type === 'image') {
+        label = `<div class="wtl-label">图表产物${isActive ? '<span class="chip blue wtl-badge">进行中</span>' : ''}</div>`;
+        body = `<div class="wtl-body">${renderImages(b.text)}</div>`;
       } else if (b.type === 'plan') {
         label = '<div class="wtl-label">执行计划</div>';
         body = `<div class="wtl-body">${renderPlanCard(b.text, isActive && chatState.pendingPlan)}</div>`;
@@ -307,6 +310,23 @@ function renderBlocks(blocks, done) {
     })
     .join('');
   return `<div class="wtl"><div class="wtl-head"><b>任务执行</b><span class="dim small">共 ${blocks.length} 个节点</span></div>${rows}</div>`;
+}
+
+/* 图片块(Python 产物图:base64 直渲;解析失败不显示) */
+function renderImages(text) {
+  let images;
+  try {
+    images = JSON.parse(text);
+  } catch {
+    return '';
+  }
+  if (!Array.isArray(images) || !images.length) return '';
+  return images
+    .map(
+      (img) =>
+        `<figure class="wtl-figure"><img src="data:${img.mime};base64,${img.data}" alt="${esc(img.name)}" loading="lazy"><figcaption>${esc(img.name)}</figcaption></figure>`
+    )
+    .join('');
 }
 
 /* SQL 结果集(客户端分页) */
@@ -445,6 +465,10 @@ function startChatStream(url) {
   });
   on('result', (c) => {
     chatState.blocks.push({ type: 'result', text: c.text });
+    renderStreaming();
+  });
+  on('image', (c) => {
+    chatState.blocks.push({ type: 'image', text: c.text });
     renderStreaming();
   });
   on('plan', (c) => {

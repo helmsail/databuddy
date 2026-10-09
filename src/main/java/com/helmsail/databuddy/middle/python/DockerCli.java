@@ -1,4 +1,4 @@
-package com.helmsail.databuddy.middle.python.core;
+package com.helmsail.databuddy.middle.python;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;

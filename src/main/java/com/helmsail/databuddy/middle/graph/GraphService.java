@@ -27,7 +27,7 @@ import reactor.core.scheduler.Schedulers;
 
 /**
  * 图的服务:只做执行编排,自建 sink 组装 SSE 流对外返回(入口错误帧/过程帧/收尾帧全在流内)。
- * 图由 GraphConfig 装配注入;本服务订阅图、编排事件与收尾时机(step / plan / sql / result / text / done / error 何时发,
+ * 图由 GraphConfig 装配注入;本服务订阅图、编排事件与收尾时机(step / plan / sql / result / image / text / done / error 何时发,
  * 帧形态与去重下沉 GraphThread / GraphSseEmitter)并登记执行线。
  * 线程键 = 官方 RunnableConfig.threadId(一线程一会话;值即业务侧会话键 sessionId):检查点挂在会话键下——
  * 跑完/停止/出错/开跑前释放、挂起轮保留(唯一例外,持久于库、跨重启有效)。
@@ -213,10 +213,11 @@ public class GraphService {
 			thread.collectAnswer(output.state().value(GraphKeys.Info.FINAL_ANSWER, String.class).orElse(null)); // 记录最终回复
 			return;
 		}
-		// 中间节点完成:过程状态 / SQL / 结果三帧(空判与去重都在现场内)
+		// 中间节点完成:过程状态 / SQL / 结果 / 图片四帧(空判与去重都在现场内)
 		thread.step(output.node(), output.state().value(GraphKeys.Info.PROGRESS, String.class).orElse(null));
 		thread.sql(output.node(), output.state().value(GraphKeys.Info.SQL_QUERY, String.class).orElse(null));
 		thread.result(output.node(), output.state().value(GraphKeys.Info.SQL_RESULT, String.class).orElse(null));
+		thread.image(output.node(), output.state().value(GraphKeys.Info.PYTHON_IMAGES, String.class).orElse(null));
 	}
 
 	private void onComplete(GraphThread thread) {

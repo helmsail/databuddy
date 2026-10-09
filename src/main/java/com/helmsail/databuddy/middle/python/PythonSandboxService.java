@@ -1,4 +1,4 @@
-package com.helmsail.databuddy.middle.python.core;
+package com.helmsail.databuddy.middle.python;
 
 import java.nio.file.Path;
 import java.time.Duration;
@@ -14,21 +14,26 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
 
+import org.springframework.stereotype.Component;
+
 import com.helmsail.databuddy.exception.BusinessException;
 import com.helmsail.databuddy.exception.ErrorCode;
-import com.helmsail.databuddy.middle.python.SandboxProperties;
 
+import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
 
 /**
- * 沙箱容器池:连接池语义(borrow/release),参照 Druid 骨架:
+ * Python 沙箱服务:业务唯一入口——借容器、执行、归还全部封装在此,调用方拿不到容器句柄。
+ * 池为连接池语义(borrow/release),参照 Druid 骨架:
  * 锁 + 两个条件(notEmpty 供借者等待、empty 供 creator 等待需求)
  * - Creator 线程:有等待者(total 未达上限)或不足常驻数时创建容器,按需补充
  * - Evictor 线程:空闲超过 TTL 且总数大于常驻数的容器销毁(收缩)
- * 借出的容器由其使用方 release:健康归还入池,不健康销毁并让出名额
+ * 借出的容器由 execute 归还:健康入池复用,不健康销毁并让出名额。
+ * 注意:execute 是阻塞方法(等待容器 + 等待执行完成),WebFlux 消费方需在 boundedElastic 等弹性调度器上调用
  */
 @Slf4j
-public class SandboxPool {
+@Component
+public class PythonSandboxService {
 
 	/** 空闲驱逐巡检周期(秒) */
 	private static final long EVICT_INTERVAL_SECONDS = 60;
@@ -60,8 +65,33 @@ public class SandboxPool {
 
 	private ScheduledExecutorService evictor;
 
-	public SandboxPool(SandboxProperties properties) {
+	public PythonSandboxService(SandboxProperties properties) {
 		this.properties = properties;
+		start();
+	}
+
+	/** 执行 python 代码:data 以 /work/input.json 提供给代码,产物读取自 /work/output(阻塞方法,需在弹性调度器上调用) */
+	public SandboxResult execute(String code, String inputJson) {
+		Sandbox sandbox = borrow(properties.getBorrowTimeout());
+		boolean healthy = true;
+		try {
+			return sandbox.exec(code, inputJson, properties.getExecTimeout());
+		}
+		catch (RuntimeException e) {
+			// 未能执行的系统异常(进程无法启动/IO 失败等)= 容器状态不可信,不归还,直接销毁
+			healthy = false;
+			throw e;
+		}
+		finally {
+			// 软重置发现残留(孤儿进程等)也视为不可复用,销毁重建
+			release(sandbox, healthy && !sandbox.isDirty());
+		}
+	}
+
+	/** 应用关闭回调:停池 */
+	@PreDestroy
+	public void close() {
+		shutdown();
 	}
 
 	/** 启动 creator(异步预热 + 按需创建)与 evictor(TTL 收缩) */
