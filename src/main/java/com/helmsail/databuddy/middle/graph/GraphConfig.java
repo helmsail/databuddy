@@ -32,9 +32,11 @@ import com.helmsail.databuddy.middle.graph.plan.PlanExecutorNode;
 import com.helmsail.databuddy.middle.graph.plan.PlanConstants;
 import com.helmsail.databuddy.middle.graph.plan.PlannerDispatcher;
 import com.helmsail.databuddy.middle.graph.plan.PlannerNode;
+import com.helmsail.databuddy.middle.graph.python.PythonAnalyzeDispatcher;
 import com.helmsail.databuddy.middle.graph.python.PythonAnalyzeNode;
 import com.helmsail.databuddy.middle.graph.python.PythonExecuteDispatcher;
 import com.helmsail.databuddy.middle.graph.python.PythonExecuteNode;
+import com.helmsail.databuddy.middle.graph.python.PythonGenerateDispatcher;
 import com.helmsail.databuddy.middle.graph.python.PythonGenerateNode;
 import com.helmsail.databuddy.middle.graph.python.PythonConstants;
 import com.helmsail.databuddy.middle.graph.relation.RelationConstants;
@@ -52,8 +54,8 @@ import com.helmsail.databuddy.middle.graph.sql.SqlExecuteNode;
 import com.helmsail.databuddy.middle.graph.sql.SqlGenerateDispatcher;
 import com.helmsail.databuddy.middle.graph.sql.SqlGenerateNode;
 import com.helmsail.databuddy.middle.graph.sql.SqlConstants;
-import com.helmsail.databuddy.middle.graph.sql.SqlValidateDispatcher;
-import com.helmsail.databuddy.middle.graph.sql.SqlValidateNode;
+import com.helmsail.databuddy.middle.graph.sql.SqlAnalyzeDispatcher;
+import com.helmsail.databuddy.middle.graph.sql.SqlAnalyzeNode;
 
 import static com.alibaba.cloud.ai.graph.StateGraph.END;
 import static com.alibaba.cloud.ai.graph.StateGraph.START;
@@ -63,8 +65,8 @@ import static com.alibaba.cloud.ai.graph.StateGraph.START;
  * 执行编排(跑图/事件/运行表/停止/释放/挂起恢复)在 GraphService。
  * 拓扑:入口 → 意图识别 →(chat)终点 /(data_analysis)知识召回 → 查询增强 → Schema 召回 → 表关系 →
  * 可行性评估 →(澄清)终点 /(可分析)规划(生成侧自校验,不过原地重生成,超限终止) →【人工确认闸,开关默认关】→ 计划执行(枢纽):
- * SQL 组(SQL 生成 → SQL 校验 → SQL 执行,失败带原因打回生成)与 Python 组
- * (Python 生成 → Python 执行 → Python 分析)回流枢纽,组内超限升级回规划(全局 ≤ 3);
+ * SQL 组(SQL 生成 → SQL 分析 → SQL 执行)与 Python 组(Python 生成 → Python 执行 → Python 分析)——
+ * 两组同构,唯闸的排位不同(SQL 执行前审文本 / Python 执行后审数据);失败带原因打回生成,超限在生成口统一升级回规划(全局 ≤ 3);
  * 步数走完 → 报告生成(固定收尾)→ 终点
  */
 @Configuration
@@ -81,7 +83,7 @@ public class GraphConfig {
 			KnowledgeRecallNode knowledgeRecallNode, QueryEnhanceNode queryEnhanceNode, SchemaRecallNode schemaRecallNode,
 			TableRelationNode tableRelationNode, FeasibilityAssessmentNode feasibilityAssessmentNode,
 			PlannerNode plannerNode, PlanReviewNode planReviewNode, PlanExecutorNode planExecutorNode,
-			SqlGenerateNode sqlGenerateNode, SqlValidateNode sqlValidateNode, SqlExecuteNode sqlExecuteNode,
+			SqlGenerateNode sqlGenerateNode, SqlAnalyzeNode sqlAnalyzeNode, SqlExecuteNode sqlExecuteNode,
 			PythonGenerateNode pythonGenerateNode, PythonExecuteNode pythonExecuteNode, PythonAnalyzeNode pythonAnalyzeNode,
 			ReportGeneratorNode reportGeneratorNode) throws GraphStateException {
 		// 状态键已超 Map.of 的十对上限,用 ofEntries 表达
@@ -91,7 +93,7 @@ public class GraphConfig {
 				Map.entry(GraphKeys.Info.SESSION_MEMORY, KeyStrategy.REPLACE),
 				Map.entry(GraphKeys.Info.AGENT_MEMORY, KeyStrategy.REPLACE),
 				Map.entry(GraphKeys.Info.FINAL_ANSWER, KeyStrategy.REPLACE),
-				Map.entry(GraphKeys.Control.CLASSIFICATION, KeyStrategy.REPLACE),
+				Map.entry(GraphKeys.Control.INTENT_CLASSIFICATION, KeyStrategy.REPLACE),
 				Map.entry(GraphKeys.Info.KNOWLEDGE, KeyStrategy.REPLACE),
 				Map.entry(GraphKeys.Info.MAIN_QUERY, KeyStrategy.REPLACE),
 				Map.entry(GraphKeys.Info.BACKUP_QUERIES, KeyStrategy.REPLACE),
@@ -101,7 +103,7 @@ public class GraphConfig {
 				Map.entry(GraphKeys.Info.PROGRESS, KeyStrategy.REPLACE),
 				Map.entry(GraphKeys.Info.PLAN_JSON, KeyStrategy.REPLACE),
 				Map.entry(GraphKeys.Control.PLAN_STEP_NO, KeyStrategy.REPLACE),
-				Map.entry(GraphKeys.Control.HUMAN_REVIEW_ENABLED, KeyStrategy.REPLACE),
+				Map.entry(GraphKeys.Control.PLAN_REVIEW_ENABLED, KeyStrategy.REPLACE),
 				Map.entry(GraphKeys.Control.PLAN_REVIEW_DECISION, KeyStrategy.REPLACE),
 				Map.entry(GraphKeys.Control.PLAN_RETRY_COUNT, KeyStrategy.REPLACE),
 				Map.entry(GraphKeys.Control.PLAN_REPAIR_REASON, KeyStrategy.REPLACE),
@@ -116,7 +118,8 @@ public class GraphConfig {
 				Map.entry(GraphKeys.Info.PYTHON_CODE, KeyStrategy.REPLACE),
 				Map.entry(GraphKeys.Control.PYTHON_RETRY_COUNT, KeyStrategy.REPLACE),
 				Map.entry(GraphKeys.Control.PYTHON_NEXT, KeyStrategy.REPLACE),
-				Map.entry(GraphKeys.Control.PYTHON_FAIL_REASON, KeyStrategy.REPLACE),
+				Map.entry(GraphKeys.Control.PYTHON_REPAIR_REASON, KeyStrategy.REPLACE),
+				Map.entry(GraphKeys.Control.PYTHON_PASSED, KeyStrategy.REPLACE),
 				Map.entry(GraphKeys.Info.PYTHON_RESULT, KeyStrategy.REPLACE),
 				Map.entry(GraphKeys.Info.STEP_RESULTS, KeyStrategy.REPLACE));
 		return new StateGraph("databuddy", keyStrategyFactory)
@@ -131,7 +134,7 @@ public class GraphConfig {
 			.addNode(ReviewConstants.PLAN_REVIEW, planReviewNode)
 			.addNode(PlanConstants.PLAN_EXECUTOR, planExecutorNode)
 			.addNode(SqlConstants.SQL_GENERATE, sqlGenerateNode)
-			.addNode(SqlConstants.SQL_VALIDATE, sqlValidateNode)
+			.addNode(SqlConstants.SQL_ANALYZE, sqlAnalyzeNode)
 			.addNode(SqlConstants.SQL_EXECUTE, sqlExecuteNode)
 			.addNode(PythonConstants.PYTHON_GENERATE, pythonGenerateNode)
 			.addNode(PythonConstants.PYTHON_EXECUTE, pythonExecuteNode)
@@ -169,25 +172,31 @@ public class GraphConfig {
 					AsyncEdgeAction.edge_async(new PlanReviewDispatcher()),
 					Map.of(END, END, PlanConstants.PLANNER, PlanConstants.PLANNER, PlanConstants.PLAN_EXECUTOR,
 							PlanConstants.PLAN_EXECUTOR, ReviewConstants.PLAN_REVIEW, ReviewConstants.PLAN_REVIEW))
-			// SQL 组:生成 → SQL 校验 → 执行;失败带原因打回生成,超限升级回规划
+			// SQL 组:生成 → 分析(闸) → 执行;失败带原因打回生成,超限在生成口统一升级回规划
 			.addConditionalEdges(SqlConstants.SQL_GENERATE,
 					AsyncEdgeAction.edge_async(new SqlGenerateDispatcher()),
 					Map.of(END, END, PlanConstants.PLANNER, PlanConstants.PLANNER, SqlConstants.SQL_GENERATE, SqlConstants.SQL_GENERATE,
-							SqlConstants.SQL_VALIDATE, SqlConstants.SQL_VALIDATE))
-			.addConditionalEdges(SqlConstants.SQL_VALIDATE,
-					AsyncEdgeAction.edge_async(new SqlValidateDispatcher()),
+							SqlConstants.SQL_ANALYZE, SqlConstants.SQL_ANALYZE))
+			.addConditionalEdges(SqlConstants.SQL_ANALYZE,
+					AsyncEdgeAction.edge_async(new SqlAnalyzeDispatcher()),
 					Map.of(SqlConstants.SQL_EXECUTE, SqlConstants.SQL_EXECUTE, SqlConstants.SQL_GENERATE, SqlConstants.SQL_GENERATE))
 			.addConditionalEdges(SqlConstants.SQL_EXECUTE,
 					AsyncEdgeAction.edge_async(new SqlExecuteDispatcher()),
 					Map.of(END, END, PlanConstants.PLAN_EXECUTOR, PlanConstants.PLAN_EXECUTOR, SqlConstants.SQL_GENERATE,
 							SqlConstants.SQL_GENERATE))
-			// Python 组:生成 → 执行 → 分析;失败带原因打回生成,超限升级回规划
-			.addEdge(PythonConstants.PYTHON_GENERATE, PythonConstants.PYTHON_EXECUTE)
+			// Python 组:生成 → 执行 → 分析(闸);失败带原因打回生成,超限在生成口统一升级回规划
+			.addConditionalEdges(PythonConstants.PYTHON_GENERATE,
+					AsyncEdgeAction.edge_async(new PythonGenerateDispatcher()),
+					Map.of(END, END, PlanConstants.PLANNER, PlanConstants.PLANNER, PythonConstants.PYTHON_EXECUTE,
+							PythonConstants.PYTHON_EXECUTE))
 			.addConditionalEdges(PythonConstants.PYTHON_EXECUTE,
 					AsyncEdgeAction.edge_async(new PythonExecuteDispatcher()),
-					Map.of(END, END, PlanConstants.PLANNER, PlanConstants.PLANNER, PythonConstants.PYTHON_GENERATE,
-							PythonConstants.PYTHON_GENERATE, PythonConstants.PYTHON_ANALYZE, PythonConstants.PYTHON_ANALYZE))
-			.addEdge(PythonConstants.PYTHON_ANALYZE, PlanConstants.PLAN_EXECUTOR)
+					Map.of(END, END, PythonConstants.PYTHON_GENERATE, PythonConstants.PYTHON_GENERATE,
+							PythonConstants.PYTHON_ANALYZE, PythonConstants.PYTHON_ANALYZE))
+			.addConditionalEdges(PythonConstants.PYTHON_ANALYZE,
+					AsyncEdgeAction.edge_async(new PythonAnalyzeDispatcher()),
+					Map.of(PlanConstants.PLAN_EXECUTOR, PlanConstants.PLAN_EXECUTOR, PythonConstants.PYTHON_GENERATE,
+							PythonConstants.PYTHON_GENERATE))
 			// 报告固定收尾
 			.addEdge(ReportConstants.REPORT_GENERATOR, END)
 			.compile(CompileConfig.builder()

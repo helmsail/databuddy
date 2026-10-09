@@ -139,7 +139,7 @@ public class GraphService {
 		Map<String, Object> init = Map.of(GraphKeys.Info.INPUT, thread.getInput(), GraphKeys.Info.AGENT_ID, thread.getAgentId(),
 				GraphKeys.Info.SESSION_MEMORY, memory.sessionMemory(thread.getThreadId()),
 				GraphKeys.Info.AGENT_MEMORY, memory.agentMemory(thread.getAgentId()),
-				GraphKeys.Control.HUMAN_REVIEW_ENABLED, planReview, GraphKeys.Control.NL2SQL_ENABLED, thread.isNl2sqlMode());
+				GraphKeys.Control.PLAN_REVIEW_ENABLED, planReview, GraphKeys.Control.NL2SQL_ENABLED, thread.isNl2sqlMode());
 		Flux<NodeOutput> outputs = graph.stream(init, RunnableConfig.builder().threadId(thread.getThreadId()).build());
 		subscribe(thread, outputs);
 	}

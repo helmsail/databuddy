@@ -45,7 +45,7 @@ public class PlanReviewNode implements AsyncNodeAction {
 		String feedback = String.valueOf(decision.getOrDefault("feedback", ""));
 		if (approved) {
 			log.info("计划已确认,放行执行");
-			return CompletableFuture.completedFuture(Map.of(GraphKeys.Control.HUMAN_REVIEW_ENABLED, false, GraphKeys.Control.PLAN_NEXT_NODE,
+			return CompletableFuture.completedFuture(Map.of(GraphKeys.Control.PLAN_REVIEW_ENABLED, false, GraphKeys.Control.PLAN_NEXT_NODE,
 					PlanConstants.PLAN_EXECUTOR, GraphKeys.Info.PROGRESS, "计划已确认:开始执行"));
 		}
 		int count = NodeUtils.intOf(state, GraphKeys.Control.PLAN_RETRY_COUNT, 0) + 1;
@@ -57,7 +57,7 @@ public class PlanReviewNode implements AsyncNodeAction {
 		log.info("计划被否决(第 {} 次),重新规划: {}", count, feedback);
 		return CompletableFuture.completedFuture(Map.of(GraphKeys.Control.PLAN_RETRY_COUNT, count, GraphKeys.Control.PLAN_REPAIR_REASON,
 				StringUtils.hasText(feedback) ? feedback : "用户否决了计划", GraphKeys.Control.PLAN_STEP_NO, 1,
-				GraphKeys.Control.HUMAN_REVIEW_ENABLED, true, GraphKeys.Control.PLAN_NEXT_NODE, PlanConstants.PLANNER, GraphKeys.Info.PROGRESS,
+				GraphKeys.Control.PLAN_REVIEW_ENABLED, true, GraphKeys.Control.PLAN_NEXT_NODE, PlanConstants.PLANNER, GraphKeys.Info.PROGRESS,
 				"计划已被否决:重新规划"));
 	}
 

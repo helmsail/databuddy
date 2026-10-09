@@ -23,7 +23,7 @@ import lombok.extern.slf4j.Slf4j;
 
 /**
  * SQL 生成节点(SQL 组头):按计划当前步的任务生成一句 SQL,写 SQL_QUERY。
- * 打回原因(SQL_REPAIR_REASON:语义不过 / 执行失败)与上次 SQL 注入提示词重写——"带原文改"是螺旋不是打转。
+ * 打回原因(SQL_REPAIR_REASON:分析不过 / 执行失败)与上次 SQL 注入提示词重写——"带原文改"是螺旋不是打转。
  * 重试计数每次生成 +1;超限走升级阶梯:全局重规划 ≤ PLAN_RETRY_MAX 次,再超限终止语收场。
  * 去向写 SQL_NEXT,由分流器读;阻塞的 LLM 调用发生在图订阅线程(boundedElastic)上,不占事件循环
  */
@@ -96,7 +96,7 @@ public class SqlGenerateNode implements AsyncNodeAction {
 					attempt, GraphKeys.Control.SQL_REPAIR_REASON, "生成结果为空", GraphKeys.Info.PROGRESS, "SQL 生成结果为空,重试"));
 		}
 		log.info("SQL 生成完成(第 {} 次尝试): {}", attempt, NodeUtils.brief(sql));
-		return CompletableFuture.completedFuture(Map.of(GraphKeys.Info.SQL_QUERY, sql, GraphKeys.Control.SQL_NEXT, "validate",
+		return CompletableFuture.completedFuture(Map.of(GraphKeys.Info.SQL_QUERY, sql, GraphKeys.Control.SQL_NEXT, "analyze",
 				GraphKeys.Control.SQL_RETRY_COUNT, attempt, GraphKeys.Control.SQL_REPAIR_REASON, "", GraphKeys.Info.PROGRESS,
 				"SQL 生成完成(第 " + attempt + " 次尝试)"));
 	}

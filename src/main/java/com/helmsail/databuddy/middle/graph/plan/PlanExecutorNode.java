@@ -41,7 +41,7 @@ public class PlanExecutorNode implements AsyncNodeAction {
 	@Observed(name = "node.planExecutor", contextualName = "计划执行")
 	public CompletableFuture<Map<String, Object>> apply(OverAllState state) {
 		// 人工确认闸:开启则先转确认节点(确认后开关被关掉,后续步不再拦)——闸在计划读取之前
-		if (Boolean.TRUE.equals(state.value(GraphKeys.Control.HUMAN_REVIEW_ENABLED, false))) {
+		if (Boolean.TRUE.equals(state.value(GraphKeys.Control.PLAN_REVIEW_ENABLED, false))) {
 			return CompletableFuture.completedFuture(Map.of(GraphKeys.Control.PLAN_NEXT_NODE, ReviewConstants.PLAN_REVIEW, GraphKeys.Info.PROGRESS,
 					"计划待确认:请确认后继续执行"));
 		}

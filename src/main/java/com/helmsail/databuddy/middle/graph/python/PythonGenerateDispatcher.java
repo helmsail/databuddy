@@ -1,4 +1,4 @@
-package com.helmsail.databuddy.middle.graph.sql;
+package com.helmsail.databuddy.middle.graph.python;
 
 import org.springframework.util.StringUtils;
 
@@ -10,11 +10,10 @@ import com.helmsail.databuddy.middle.graph.plan.PlanConstants;
 import static com.alibaba.cloud.ai.graph.StateGraph.END;
 
 /**
- * SQL 生成的出边分流器:写了终止语 → 终点;按 SQL_NEXT 去向——
- * analyze(生成成功)→ SQL 分析;regenerate(空结果)→ 自跳重试;
- * replan(重试超限)→ 规划节点重写
+ * Python 生成的出边分流器:写了终止语 → 终点;按 PYTHON_NEXT 去向——
+ * execute(生成成功)→ 执行节点;replan(重试超限)→ 规划节点重写
  */
-public class SqlGenerateDispatcher implements EdgeAction {
+public class PythonGenerateDispatcher implements EdgeAction {
 
 	@Override
 	public String apply(OverAllState state) {
@@ -22,12 +21,11 @@ public class SqlGenerateDispatcher implements EdgeAction {
 		if (StringUtils.hasText(termination)) {
 			return END;
 		}
-		String next = state.value(GraphKeys.Control.SQL_NEXT, "analyze");
+		String next = state.value(GraphKeys.Control.PYTHON_NEXT, "execute");
 		return switch (next) {
 			case "end" -> END;
 			case "replan" -> PlanConstants.PLANNER;
-			case "regenerate" -> SqlConstants.SQL_GENERATE;
-			default -> SqlConstants.SQL_ANALYZE;
+			default -> PythonConstants.PYTHON_EXECUTE;
 		};
 	}
 

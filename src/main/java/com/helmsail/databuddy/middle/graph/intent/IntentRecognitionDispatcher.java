@@ -16,7 +16,7 @@ public class IntentRecognitionDispatcher implements EdgeAction {
 
 	@Override
 	public String apply(OverAllState state) {
-		String classification = state.value(GraphKeys.Control.CLASSIFICATION, String.class).orElse("");
+		String classification = state.value(GraphKeys.Control.INTENT_CLASSIFICATION, String.class).orElse("");
 		return IntentConstants.DATA_ANALYSIS.equals(classification) ? KnowledgeConstants.KNOWLEDGE_RECALL : END;
 	}
 

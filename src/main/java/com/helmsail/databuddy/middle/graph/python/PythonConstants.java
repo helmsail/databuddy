@@ -11,10 +11,10 @@ public final class PythonConstants {
 	/** Python 执行节点(沙箱运行) */
 	public static final String PYTHON_EXECUTE = "python-execute";
 
-	/** Python 分析节点(Python 组质检,执行后审结果) */
+	/** Python 分析节点(Python 组闸,执行后审数据) */
 	public static final String PYTHON_ANALYZE = "python-analyze";
 
-	/** Python 组重试上限(执行失败重生成计数;超限升级重规划) */
+	/** Python 组重试上限(生成即计数;执行/分析失败均打回生成,超限在生成口升级重规划) */
 	public static final int PYTHON_RETRY_MAX = 3;
 
 	private PythonConstants() {

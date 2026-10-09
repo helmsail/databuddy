@@ -355,9 +355,12 @@ SELECT 'sql-generate',
 FROM DUAL
 WHERE NOT EXISTS (SELECT 1 FROM node_prompt_template WHERE name = 'sql-generate');
 
+-- 开发期迁移(幂等):旧模板名 sql-validate 已并入 sql-analyze
+DELETE FROM node_prompt_template WHERE name = 'sql-validate';
+
 INSERT INTO node_prompt_template (name, content, version, enabled)
-SELECT 'sql-validate',
-'你是严格的 SQL 审计专家和 {dialect} 语法专家:验证待验证 SQL 是否准确完成【当前步骤任务】,并符合数据库事实。
+SELECT 'sql-analyze',
+'你是严格的 SQL 分析专家和 {dialect} 语法专家:分析 SQL 是否准确完成【当前步骤任务】,并符合数据库事实。
 
 【当前步骤任务(核心依据)】
 {task}
@@ -385,7 +388,7 @@ SELECT 'sql-validate',
 要求:仅输出 JSON,不要输出其他内容;passed 为布尔值,reason 为简短结论(不通过时说明字段、逻辑或语法问题)。',
 1, 1
 FROM DUAL
-WHERE NOT EXISTS (SELECT 1 FROM node_prompt_template WHERE name = 'sql-validate');
+WHERE NOT EXISTS (SELECT 1 FROM node_prompt_template WHERE name = 'sql-analyze');
 
 INSERT INTO node_prompt_template (name, content, version, enabled)
 SELECT 'python-generate',
@@ -420,25 +423,30 @@ SELECT 'python-generate',
 FROM DUAL
 WHERE NOT EXISTS (SELECT 1 FROM node_prompt_template WHERE name = 'python-generate');
 
+-- python-analyze 契约为 v2(判定 + 解读):老版本降级、新版本激活(幂等;节点按 JSON {consistent, reason, analysis} 解析)
+UPDATE node_prompt_template SET enabled = NULL
+WHERE name = 'python-analyze' AND version < 2 AND enabled = 1;
+
 INSERT INTO node_prompt_template (name, content, version, enabled)
 SELECT 'python-analyze',
-'你是数据分析报告撰写专家:根据【用户问题】与【Python 运行结果】,写一段结构清晰、语言简洁、内容准确的自然语言总结。
+'你是数据分析质检员兼解读专家:先判断【Python 运行结果】与【当前步骤任务】是否一致,再按判定输出。
 
-【用户问题】
+【当前步骤任务(判定依据)】
+{task}
+
+【用户问题(全局背景)】
 {main_query}
 
-【Python 运行结果(JSON 或文本)】
+【Python 运行结果(JSON 或文本,可能被截断)】
 {python_result}
 
-要求:
-1) 只输出自然语言总结,不要代码、JSON、Markdown 或额外说明;
-2) 直接回应用户问题,突出关键结论(数字、排名、异常点);
-3) 严格基于运行结果,不猜测、不虚构;结果为空或出错时如实指出;
-4) 语言简练易懂,避免技术术语;若数据被截断,措辞上说明数据可能不完整;
-5) 不要给额外建议,只做结果归纳。',
-1, 1
+判定口径:数据为空、与任务无关、口径明显不符 → consistent 为 false;存疑一律判一致(误杀代价高于放过)。
+解读要求:直接回应用户问题,突出关键结论(数字、排名、异常点);严格基于运行结果,不猜测、不虚构;语言简练易懂;数据被截断时措辞上说明可能不完整;不要给额外建议。
+
+要求:仅输出 JSON,不要 Markdown 代码块标记,不要其他内容;格式:{"consistent": 布尔值, "reason": "不一致的简短原因(一致时为空)", "analysis": "结果解读(不一致时为空)"}',
+2, 1
 FROM DUAL
-WHERE NOT EXISTS (SELECT 1 FROM node_prompt_template WHERE name = 'python-analyze');
+WHERE NOT EXISTS (SELECT 1 FROM node_prompt_template WHERE name = 'python-analyze' AND version = 2);
 
 INSERT INTO node_prompt_template (name, content, version, enabled)
 SELECT 'report-generator',

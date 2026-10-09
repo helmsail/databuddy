@@ -14,15 +14,15 @@ public final class GraphKeys {
 		// —— 意图 ——
 
 		/** 意图分类结果(取值见 intent 包 IntentConstants;IntentRecognitionDispatcher 据此分流) */
-		public static final String CLASSIFICATION = "classification";
+		public static final String INTENT_CLASSIFICATION = "intent_classification";
 
 		// —— 计划(含人工确认闸) ——
 
-		/** 当前步号(数字,1 起;规划写 1,枢纽读,SQL 执行成功 / Python 分析完成时 +1) */
+		/** 当前步号(数字,1 起;规划写 1,枢纽读,SQL 执行成功 / Python 分析过检时 +1) */
 		public static final String PLAN_STEP_NO = "plan_step_no";
 
 		/** 人工确认闸开关(入口传参,默认关;挂起恢复后由确认节点关掉) */
-		public static final String HUMAN_REVIEW_ENABLED = "human_review_enabled";
+		public static final String PLAN_REVIEW_ENABLED = "plan_review_enabled";
 
 		/** 人工确认决定(恢复时由 updateState 写入:{approved, feedback}) */
 		public static final String PLAN_REVIEW_DECISION = "plan_review_decision";
@@ -44,25 +44,28 @@ public final class GraphKeys {
 		/** SQL 组重试计数(生成即 +1;执行成功清零;超限触发升级) */
 		public static final String SQL_RETRY_COUNT = "sql_retry_count";
 
-		/** SQL 组去向标记(组内节点写,分流器读):validate / regenerate / replan / end / hub */
+		/** SQL 组去向标记(组内节点写,分流器读):analyze / regenerate / replan / end / hub */
 		public static final String SQL_NEXT = "sql_next";
 
-		/** SQL 打回原因(语义不过 / 执行失败;生成成功时清空) */
+		/** SQL 打回原因(分析不过 / 执行失败;生成成功时清空) */
 		public static final String SQL_REPAIR_REASON = "sql_repair_reason";
 
-		/** SQL 校验结果(SQL 校验节点写,分流器读;未通过原因写 SQL_REPAIR_REASON 打回生成) */
+		/** SQL 分析判定(SQL 分析节点写,分流器读;未通过原因写 SQL_REPAIR_REASON 打回生成) */
 		public static final String SQL_PASSED = "sql_passed";
 
 		// —— Python 组 ——
 
-		/** Python 组重试计数(生成即 +1;分析完成清零;超限触发升级) */
+		/** Python 组重试计数(生成即 +1;分析过检清零;超限触发升级) */
 		public static final String PYTHON_RETRY_COUNT = "python_retry_count";
 
-		/** Python 组去向标记(组内节点写,分流器读):analyze / regenerate / replan / end */
+		/** Python 组去向标记(组内节点写,分流器读):execute / analyze / regenerate / replan / end */
 		public static final String PYTHON_NEXT = "python_next";
 
-		/** Python 失败原因(执行失败/超时/无产出;注入重写提示词) */
-		public static final String PYTHON_FAIL_REASON = "python_fail_reason";
+		/** Python 打回原因(执行失败/超时/无产出/分析判定不一致;生成成功时清空) */
+		public static final String PYTHON_REPAIR_REASON = "python_repair_reason";
+
+		/** Python 分析判定(分析节点写,分流器读;不一致原因写 PYTHON_REPAIR_REASON 打回生成) */
+		public static final String PYTHON_PASSED = "python_passed";
 
 		private Control() {
 		}

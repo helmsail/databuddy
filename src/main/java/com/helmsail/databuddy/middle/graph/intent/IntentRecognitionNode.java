@@ -75,10 +75,10 @@ public class IntentRecognitionNode implements AsyncNodeAction {
 			if (!StringUtils.hasText(response)) {
 				throw new IllegalStateException("意图识别为 chat 但未产出回复: " + NodeUtils.brief(output));
 			}
-			return Map.of(GraphKeys.Control.CLASSIFICATION, classification, GraphKeys.Info.FINAL_ANSWER, response,
+			return Map.of(GraphKeys.Control.INTENT_CLASSIFICATION, classification, GraphKeys.Info.FINAL_ANSWER, response,
 					GraphKeys.Info.PROGRESS, "意图识别完成:闲聊");
 		}
-		return Map.of(GraphKeys.Control.CLASSIFICATION, classification, GraphKeys.Info.PROGRESS, "意图识别完成:数据分析");
+		return Map.of(GraphKeys.Control.INTENT_CLASSIFICATION, classification, GraphKeys.Info.PROGRESS, "意图识别完成:数据分析");
 	}
 
 }
