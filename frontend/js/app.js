@@ -65,6 +65,7 @@ function renderAgentSwitch() {
 }
 
 function setActiveAgent(id) {
+  if (chatState.busy) return toast('任务进行中,先停止再切换智能体', true);
   store.activeAgentId = id;
   localStorage.setItem(AGENT_KEY, String(id));
   renderAgentSwitch();

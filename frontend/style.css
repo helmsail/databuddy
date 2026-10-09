@@ -494,15 +494,15 @@ pre.code .lang { display: block; font-size: 9px; letter-spacing: .12em; color: #
 .btn.reject:hover { background: #fef2f2; }
 
 /* ================= 知识库页 ================= */
-.tabbar { display: flex; gap: 2px; border-bottom: 1px solid var(--line); margin-bottom: 10px; }
-.tabbar button {
-  border: 0; background: transparent; color: var(--text-2);
-  padding: 5px 11px; font: inherit; font-size: 12px; font-weight: 500;
-  border-bottom: 2px solid transparent; cursor: pointer;
-  margin-bottom: -1px;
+.kb-layout { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 12px; align-items: start; }
+.kb-side { display: flex; flex-direction: column; gap: 2px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); padding: 6px; }
+.kb-side button {
+  border: 0; background: transparent; color: var(--text-2); text-align: left;
+  padding: 6px 10px; font: inherit; font-size: 12px; font-weight: 500;
+  border-radius: var(--radius-sm); cursor: pointer;
 }
-.tabbar button:hover { color: var(--text); }
-.tabbar button.active { color: var(--primary); border-bottom-color: var(--primary); font-weight: 600; }
+.kb-side button:hover { background: var(--line-soft); color: var(--text); }
+.kb-side button.active { background: var(--primary-soft); color: var(--primary); font-weight: 600; }
 
 .tab-toolbar { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
 .tab-toolbar .hint { font-size: 11px; color: var(--faint); margin-left: auto; }
@@ -568,4 +568,6 @@ pre.code .lang { display: block; font-size: 9px; letter-spacing: .12em; color: #
   .sess-side { max-height: 180px; }
   .chat-main { height: 72vh; }
   .split { grid-template-columns: 1fr; }
+  .kb-layout { grid-template-columns: 1fr; }
+  .kb-side { flex-direction: row; flex-wrap: wrap; }
 }

@@ -16,15 +16,17 @@ async function mountKnowledge(view) {
         <p>${esc(agent.name)} · 维护专属知识资源(数据表 / 文档 / 术语 / 问答),支持向量召回;沉淀记忆由对话自动积累</p>
       </div>
     </div>
-    <div class="tabbar" id="kb-tabs">
-      <button data-tab="tables" class="active">数据表</button>
-      <button data-tab="docs">文档</button>
-      <button data-tab="terms">术语</button>
-      <button data-tab="qa">问答</button>
-      <button data-tab="memory">记忆</button>
-      <button data-tab="retrieve">检索测试</button>
-    </div>
-    <div id="kb-body"><div class="empty">加载中…</div></div>`;
+    <div class="kb-layout">
+      <aside class="kb-side" id="kb-tabs">
+        <button data-tab="tables" class="active">数据表</button>
+        <button data-tab="docs">文档</button>
+        <button data-tab="terms">术语</button>
+        <button data-tab="qa">问答</button>
+        <button data-tab="memory">记忆</button>
+        <button data-tab="retrieve">检索测试</button>
+      </aside>
+      <div class="kb-content" id="kb-body"><div class="empty">加载中…</div></div>
+    </div>`;
 
   $$('#kb-tabs button').forEach((btn) => {
     btn.onclick = () => {

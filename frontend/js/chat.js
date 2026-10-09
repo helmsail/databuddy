@@ -130,7 +130,8 @@ function startNewChat() {
   renderSessions();
   renderMessages();
   renderFeedbackPanel();
-  $('#chat-input') && $('#chat-input').focus();
+  const input = $('#chat-input');
+  if (input) input.focus();
 }
 
 /* 建会话(首条消息时自动调用):标题随创建直插,不做后续回填 */
@@ -147,7 +148,8 @@ async function createChatSession(title) {
     renderSessions();
     renderMessages();
     renderFeedbackPanel();
-    $('#chat-input') && $('#chat-input').focus();
+    const input = $('#chat-input');
+    if (input) input.focus();
   } catch (e) {
     toast(e.message, true);
   }
@@ -707,6 +709,10 @@ function resumeChatPlan(approved) {
 
 function stopChat() {
   closeChatStream();
+  // 主动停止:丢弃半截输出与错误,不落库(finish 里自然跳过落库分支)
+  chatState.blocks = [];
+  chatState.finalText = '';
+  chatState.streamErr = null;
   finishChatStream();
   if (chatState.sessionId) api('POST', '/agent/clear/' + encodeURIComponent(chatState.sessionId)).catch(() => {});
   // 终止未获得完整输出,不落库;仅本会话内可见提示
