@@ -56,13 +56,13 @@ com.helmsail.databuddy
 │   ├── bizdatabase   业务库接入（连接池 / 方言 / 元数据 / SQL 执行）
 │   ├── storage       本地文件存储（路径穿越防护）
 │   ├── vectorize     向量化（分类分块 / 向量读写 / 元数据契约）
+│   ├── sandbox       Python 沙箱（容器池 / 执行 / 产物）
 │   └── async         通用异步支撑
 ├── middle    业务域
 │   ├── graph         图工作流（节点 / 分流器 / 执行编排 / SSE 事件 / 检查点）
 │   ├── biztable / bizterm / bizqa / bizdocument   知识子域
 │   ├── session       会话消息域
 │   ├── memory        记忆（会话记忆 + 智能体级记忆）
-│   ├── python        Python 沙箱（容器池 / 执行 / 产物）
 │   └── prompt        节点提示词（表化存储 / 版本 / 激活）
 └── crypto / key / mcp / observation / result / exception   公共支撑
 ```
@@ -214,7 +214,7 @@ spring:
 databuddy:
   storage:
     local-root-path: ./data/files                # 文档存储根（本机直跑相对路径；compose 用 DATABUDDY_DATA_ROOT 覆盖）
-  python:
+  sandbox:
     image: databuddy-python:3.12                 # 沙箱镜像（先 docker compose --profile sandbox build）
     min-idle: 1                                  # 常驻容器数（启动后异步预热）
     max-total: 3                                 # 容器池总数上限
@@ -239,8 +239,8 @@ management:
 databuddy
 ├── src/main/java/com/helmsail/databuddy
 │   ├── agent/        # 智能体配置领域
-│   ├── bottom/       # 基础域：模型配置 / 业务库 / 存储 / 向量化 / 异步
-│   ├── middle/       # 业务域：图工作流 / 知识子域 / 会话 / 记忆 / 沙箱 / 提示词
+│   ├── bottom/       # 基础域：模型配置 / 业务库 / 存储 / 向量化 / 沙箱 / 异步
+│   ├── middle/       # 业务域：图工作流 / 知识子域 / 会话 / 记忆 / 提示词
 │   └── crypto/ key/ mcp/ observation/ result/ exception/    # 公共支撑
 ├── src/main/resources
 │   ├── db/schema.sql # 系统库表结构 + 提示词种子（启动幂等执行）

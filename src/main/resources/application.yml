@@ -29,7 +29,7 @@ mybatis: # 系统库 Mapper 的映射依赖:列名下划线 → 实体属性驼�
 databuddy:
   storage:
     local-root-path: ./data/files
-  python:
+  sandbox:
     image: databuddy-python:3.12 # 沙箱镜像,先构建 docker/python/Dockerfile
     min-idle: 1 # 常驻容器数(启动后异步预热)
     max-total: 3 # 容器总数上限

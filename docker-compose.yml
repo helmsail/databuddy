@@ -55,7 +55,7 @@ services:
       DATABUDDY_AES_KEY: ${DATABUDDY_AES_KEY:?}
       # 数据根 → 文档存储与沙箱工作目录(宿主/容器必须同字符串,见文件头)
       DATABUDDY_STORAGE_LOCALROOTPATH: ${DATABUDDY_DATA_ROOT:?}/files
-      DATABUDDY_PYTHON_WORKROOT: ${DATABUDDY_DATA_ROOT:?}/sandbox
+      DATABUDDY_SANDBOX_WORKROOT: ${DATABUDDY_DATA_ROOT:?}/sandbox
       TZ: Asia/Shanghai
     volumes:
       # 沙箱:应用内 docker CLI 经此 socket 调宿主 daemon(工作目录权限由应用侧处理,见 Sandbox.create)

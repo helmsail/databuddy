@@ -1,4 +1,4 @@
-package com.helmsail.databuddy.middle.python;
+package com.helmsail.databuddy.bottom.sandbox;
 
 import java.time.Duration;
 
@@ -8,11 +8,11 @@ import org.springframework.stereotype.Component;
 import lombok.Data;
 
 /**
- * python 沙箱配置
+ * 沙箱配置
  */
 @Data
 @Component
-@ConfigurationProperties(prefix = "databuddy.python")
+@ConfigurationProperties(prefix = "databuddy.sandbox")
 public class SandboxProperties {
 
 	/** 沙箱镜像(预装 numpy/pandas/matplotlib 与中文字体,见 docker/python/Dockerfile) */
