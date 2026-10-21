@@ -29,6 +29,7 @@ mybatis: # 系统库 Mapper 的映射依赖:列名下划线 → 实体属性驼�
 databuddy:
   storage:
     local-root-path: ./data/files
+    max-file-size: 20MB # 上传文档大小上限(入口预检 + 落盘复核;nginx 放行值须略大于此)
   sandbox:
     image: databuddy-python:3.12 # 沙箱镜像,先构建 docker/python/Dockerfile
     min-idle: 1 # 常驻容器数(启动后异步预热)

@@ -23,6 +23,7 @@ import org.springframework.util.StringUtils;
 import com.helmsail.databuddy.exception.BusinessException;
 import com.helmsail.databuddy.exception.ErrorCode;
 import com.helmsail.databuddy.bottom.storage.LocalFileStorage;
+import com.helmsail.databuddy.bottom.storage.StorageProperties;
 import com.helmsail.databuddy.bottom.vectorize.EmbeddingStatus;
 import com.helmsail.databuddy.bottom.vectorize.KnowledgeType;
 import com.helmsail.databuddy.bottom.vectorize.RetrievedChunk;
@@ -60,15 +61,19 @@ public class AgentBizDocumentService {
 
 	private final LocalFileStorage fileStorage;
 
+	private final StorageProperties storageProperties;
+
 	private final VectorService vectorService;
 
 	/** 向量化后台队列(装配见 async 包):单线程 FIFO 串行,活过请求 */
 	private final TaskExecutor vectorSyncExecutor;
 
 	public AgentBizDocumentService(AgentBizDocumentMapper mapper, LocalFileStorage fileStorage,
-			VectorService vectorService, @Qualifier("vectorSyncExecutor") TaskExecutor vectorSyncExecutor) {
+			StorageProperties storageProperties, VectorService vectorService,
+			@Qualifier("vectorSyncExecutor") TaskExecutor vectorSyncExecutor) {
 		this.mapper = mapper;
 		this.fileStorage = fileStorage;
+		this.storageProperties = storageProperties;
 		this.vectorService = vectorService;
 		this.vectorSyncExecutor = vectorSyncExecutor;
 	}
@@ -105,7 +110,7 @@ public class AgentBizDocumentService {
 	/**
 	 * 上传文档(agent 存在性由入口校验):行先落库(唯一键裁决重名:重名即拒,不碰文件)→ 文件同步落存储(按 agent 分目录,
 	 * 落盘名 = 文档名;落盘失败撤行)→ vectorSyncExecutor 队列异步切分向量化,立即返回。
-	 * name 缺省取文件名;仅接受白名单扩展名(文本类 + pdf/word/excel/ppt,其余直接拒绝)
+	 * name 缺省取文件名;仅接受白名单扩展名(文本类 + pdf/word/excel/ppt,其余直接拒绝);大小上限两处拦截(part 头预检 + 落盘后复核)
 	 */
 	public Mono<AgentBizDocument> upload(long agentId, FilePart filePart, String name, SplitterType splitterType) {
 		// 文档名归一与校验:显式名字优先(缺省取上传文件名),不含路径分隔符,扩展名在白名单内
@@ -119,6 +124,10 @@ public class AgentBizDocumentService {
 		}
 		if (!SUPPORTED_EXTENSIONS.contains(extension(docName))) {
 			throw new BusinessException(ErrorCode.INVALID_INPUT, "暂不支持的文件类型: " + docName);
+		}
+		// 大小预检(按 part 头):头缺失(-1)时放行,由落盘后复核实际大小兜底
+		if (filePart.headers().getContentLength() > storageProperties.getMaxFileSize().toBytes()) {
+			throw new BusinessException(ErrorCode.INVALID_INPUT, sizeLimitMessage());
 		}
 		SplitterType type = splitterType == null ? SplitterType.PARAGRAPH : splitterType;
 		// 与 storage 落盘同一拼法(subPath + 文件名),行内路径与磁盘一致
@@ -141,12 +150,29 @@ public class AgentBizDocumentService {
 		})
 			.subscribeOn(Schedulers.boundedElastic())
 			.flatMap(document -> fileStorage.store(filePart, SUB_PATH_PREFIX + agentId, docName)
+				.flatMap(this::verifyStoredSize)
 				.doOnError(e -> rollbackQuietly(document))
 				.doOnSuccess(stored -> {
 					vectorSyncExecutor.execute(() -> syncById(agentId, document.getId()));
 					log.info("文档上传: agent={}, name={} (#{})", agentId, docName, document.getId());
 				})
 				.thenReturn(document));
+	}
+
+	/** 落盘后复核实际大小(防 part 头缺失 / 伪造):超限删文件并报错,撤行由调用链的 doOnError 统一处理 */
+	private Mono<String> verifyStoredSize(String stored) {
+		return Mono.fromCallable(() -> {
+			if (fileStorage.getResource(stored).contentLength() > storageProperties.getMaxFileSize().toBytes()) {
+				fileStorage.delete(stored);
+				throw new BusinessException(ErrorCode.INVALID_INPUT, sizeLimitMessage());
+			}
+			return stored;
+		}).subscribeOn(Schedulers.boundedElastic());
+	}
+
+	/** 大小上限提示(随配置值):如"文档大小超过上限: 20MB" */
+	private String sizeLimitMessage() {
+		return "文档大小超过上限: " + storageProperties.getMaxFileSize().toMegabytes() + "MB";
 	}
 
 	/** 修改文档(按 agent + id 定位):改可变字段(文档名 / 切分策略);切分策略变化才重同步(文档名与向量内容无关) */

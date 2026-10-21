@@ -214,6 +214,7 @@ spring:
 databuddy:
   storage:
     local-root-path: ./data/files                # 文档存储根（本机直跑相对路径；compose 用 DATABUDDY_DATA_ROOT 覆盖）
+    max-file-size: 20MB                          # 文档上传大小上限（入口预检 + 落盘复核；nginx 放行值须略大于此）
   sandbox:
     image: databuddy-python:3.12                 # 沙箱镜像（先 docker compose --profile sandbox build）
     min-idle: 1                                  # 常驻容器数（启动后异步预热）
